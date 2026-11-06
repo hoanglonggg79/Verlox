@@ -23,12 +23,12 @@ pub fn extract_pkg(
         install_dir.join(sub)
     };
     std::fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("Khong tao duoc {}: {e}", out_dir.display()))?;
+        .map_err(|e| format!("Không tạo được {}: {e}", out_dir.display()))?;
     let file =
-        File::open(zip_path).map_err(|e| format!("Khong mo duoc {}: {e}", zip_path.display()))?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("Zip loi: {e}"))?;
+        File::open(zip_path).map_err(|e| format!("Không mở được {}: {e}", zip_path.display()))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("Zip lỗi: {e}"))?;
     zip.extract(&out_dir)
-        .map_err(|e| format!("Giai nen loi: {e}"))?;
+        .map_err(|e| format!("Giải nén lỗi: {e}"))?;
     Ok(())
 }
 
@@ -36,8 +36,8 @@ fn run_webview2_installer(zip_path: &Path, install_dir: &Path) -> Result<(), Str
     let installer_dir = install_dir.join("_webview2");
     std::fs::create_dir_all(&installer_dir).map_err(|e| e.to_string())?;
     let file =
-        File::open(zip_path).map_err(|e| format!("Khong mo duoc {}: {e}", zip_path.display()))?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("Zip loi: {e}"))?;
+        File::open(zip_path).map_err(|e| format!("Không mở được {}: {e}", zip_path.display()))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("Zip lỗi: {e}"))?;
 
     let names: Vec<String> = zip.file_names().map(|s| s.to_string()).collect();
     let Some(idx) = names
@@ -48,9 +48,9 @@ fn run_webview2_installer(zip_path: &Path, install_dir: &Path) -> Result<(), Str
     };
     let mut data = Vec::new();
     zip.by_index(idx)
-        .map_err(|e| format!("Zip loi: {e}"))?
+        .map_err(|e| format!("Zip lỗi: {e}"))?
         .read_to_end(&mut data)
-        .map_err(|e| format!("Doc zip loi: {e}"))?;
+        .map_err(|e| format!("Đọc zip lỗi: {e}"))?;
     let file_name = Path::new(&names[idx])
         .file_name()
         .unwrap_or_default()
@@ -79,7 +79,7 @@ fn run_webview2_installer(zip_path: &Path, install_dir: &Path) -> Result<(), Str
 
 pub fn write_app_settings(install_dir: &Path) -> Result<(), String> {
     std::fs::write(install_dir.join("AppSettings.xml"), APP_SETTINGS_XML)
-        .map_err(|e| format!("Khong ghi duoc AppSettings.xml: {e}"))
+        .map_err(|e| format!("Không ghi được AppSettings.xml: {e}"))
 }
 
 #[cfg(test)]

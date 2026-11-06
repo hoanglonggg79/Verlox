@@ -1,1 +1,1 @@
-{"identifier": "default", "description": "Verlox main window capability", "windows": ["main"], "permissions": ["core:default"]}
+{"identifier": "default", "description": "Verlox main window capability", "windows": ["main"], "permissions": ["core:default", "opener:default", "opener:allow-open-url"]}

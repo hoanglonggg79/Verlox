@@ -23,7 +23,7 @@ pub fn download_client() -> Result<reqwest::Client, String> {
         .connect_timeout(Duration::from_secs(12))
         .read_timeout(Duration::from_secs(60))
         .build()
-        .map_err(|e| format!("Khong khoi tao duoc HTTP client: {e}"))
+        .map_err(|e| format!("Không khởi tạo được HTTP client: {e}"))
 }
 
 pub fn fmt_bytes(n: u64) -> String {
@@ -44,14 +44,14 @@ pub fn fmt_bytes(n: u64) -> String {
 pub async fn md5_file(path: &Path) -> Result<String, String> {
     let mut file = tokio::fs::File::open(path)
         .await
-        .map_err(|e| format!("Khong doc duoc {}: {e}", path.display()))?;
+        .map_err(|e| format!("Không đọc được {}: {e}", path.display()))?;
     let mut hasher = Md5::new();
     let mut buf = vec![0u8; 65536];
     loop {
         let n = file
             .read(&mut buf)
             .await
-            .map_err(|e| format!("Khong doc duoc {}: {e}", path.display()))?;
+            .map_err(|e| format!("Không đọc được {}: {e}", path.display()))?;
         if n == 0 {
             break;
         }
@@ -68,13 +68,13 @@ fn part_path(dest: &Path) -> PathBuf {
 
 fn network_err(name: &str, e: reqwest::Error) -> String {
     if e.is_timeout() {
-        format!("Timeout khi tai:\n{name}")
+        format!("Timeout khi tải:\n{name}")
     } else if e.is_connect() {
         format!(
-            "Mat ket noi khi tai:\n{name}\n\nThu lai — se resume tu cho dung (file .part duoc giu lai)."
+            "Mất kết nối khi tải:\n{name}\n\nThử lại — sẽ resume từ chỗ dừng (file .part được giữ lại)."
         )
     } else {
-        format!("Loi mang khi tai {name}: {e}")
+        format!("Lỗi mạng khi tải {name}: {e}")
     }
 }
 
@@ -119,22 +119,22 @@ pub async fn fetch_manifest_text(
 ) -> Result<String, String> {
     let url = format!("{cdn}/{vh}-rbxPkgManifest.txt");
     let resp = client.get(&url).send().await.map_err(|_| {
-        "Khong ket noi duoc CDN de lay manifest — kiem tra mang roi thu lai.".to_string()
+        "Không kết nối được CDN để lấy manifest — kiểm tra mạng rồi thử lại.".to_string()
     })?;
     match resp.status().as_u16() {
         404 => {
             return Err(format!(
-                "Hash khong ton tai tren CDN:\n{vh}\n\nHay kiem tra lai version hash."
+                "Hash không tồn tại trên CDN:\n{vh}\n\nHãy kiểm tra lại version hash."
             ))
         }
         s if !(200..300).contains(&s) => {
-            return Err(format!("CDN tra ma HTTP {s} khi lay manifest"));
+            return Err(format!("CDN trả mã HTTP {s} khi lấy manifest"));
         }
         _ => {}
     }
     resp.text()
         .await
-        .map_err(|e| format!("Khong doc duoc manifest: {e}"))
+        .map_err(|e| format!("Không đọc được manifest: {e}"))
 }
 
 pub struct PkgProgress {
@@ -165,7 +165,7 @@ where
     let mut req = client.get(&url);
     if part.is_file() {
         resume_pos = std::fs::metadata(&part)
-            .map_err(|e| format!("Khong doc duoc {}: {e}", part.display()))?
+            .map_err(|e| format!("Không đọc được {}: {e}", part.display()))?
             .len();
         req = req.header(reqwest::header::RANGE, format!("bytes={resume_pos}-"));
     }
@@ -188,10 +188,10 @@ where
     }
 
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err(format!("CDN khong co goi:\n{}", pkg.name));
+        return Err(format!("CDN không có gói:\n{}", pkg.name));
     }
     if !resp.status().is_success() {
-        return Err(format!("Loi HTTP {} khi tai {}", resp.status(), pkg.name));
+        return Err(format!("Lỗi HTTP {} khi tải {}", resp.status(), pkg.name));
     }
 
     let pkg_size = resp.content_length().map_or(0, |len| len + resume_pos);
@@ -203,7 +203,7 @@ where
         .await
         .map_err(|e| {
             format!(
-                "Khong ghi duoc vao {} — dia day hoac khong du quyen:\n{e}",
+                "Không ghi được vào {} — đĩa đầy hoặc không đủ quyền:\n{e}",
                 part.display()
             )
         })?;
@@ -221,7 +221,7 @@ where
         let chunk = chunk.map_err(|e| network_err(&pkg.name, e))?;
         file.write_all(&chunk).await.map_err(|e| {
             format!(
-                "Khong ghi duoc {} — dia day hoac khong du quyen:\n{e}",
+                "Không ghi được {} — đĩa đầy hoặc không đủ quyền:\n{e}",
                 pkg.name
             )
         })?;
@@ -255,20 +255,20 @@ where
     }
     file.flush()
         .await
-        .map_err(|e| format!("Khong ghi duoc {}: {e}", pkg.name))?;
+        .map_err(|e| format!("Không ghi được {}: {e}", pkg.name))?;
 
     let actual = md5_file(&part).await?;
     if !actual.eq_ignore_ascii_case(&pkg.md5) {
         let _ = std::fs::remove_file(&part);
         return Err(format!(
-            "Checksum that bai — goi hong trong luc tai:\n{}\n\nKy vong: {}\nNhan duoc: {}\n\nLan sau se tu dong tai lai.",
+            "Checksum thất bại — gói hỏng trong lúc tải:\n{}\n\nKỳ vọng: {}\nNhận được: {}\n\nLần sau sẽ tự động tải lại.",
             pkg.name, pkg.md5, actual
         ));
     }
 
     tokio::fs::rename(&part, dest)
         .await
-        .map_err(|e| format!("Khong hoan tat {}: {e}", dest.display()))?;
+        .map_err(|e| format!("Không hoàn tất {}: {e}", dest.display()))?;
     Ok(true)
 }
 

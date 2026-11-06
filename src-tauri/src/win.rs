@@ -8,18 +8,18 @@ const MARKER_VALUE: &str = "verlox";
 fn register_proto(base: &str, proto: &str, exe: &Path) -> Result<(), String> {
     let key = CURRENT_USER
         .create(format!("{base}\\{proto}"))
-        .map_err(|e| format!("Khong tao duoc khoa registry {proto}: {e}"))?;
+        .map_err(|e| format!("Không tạo được khóa registry {proto}: {e}"))?;
     key.set_string("", format!("URL:{proto} Protocol"))
-        .map_err(|e| format!("Khong ghi duoc mo ta protocol {proto}: {e}"))?;
+        .map_err(|e| format!("Không ghi được mô tả protocol {proto}: {e}"))?;
     key.set_string("URL Protocol", "")
-        .map_err(|e| format!("Khong ghi duoc gia tri 'URL Protocol' ({proto}): {e}"))?;
+        .map_err(|e| format!("Không ghi được giá trị 'URL Protocol' ({proto}): {e}"))?;
     key.set_string(MARKER_VALUE, exe.to_string_lossy())
-        .map_err(|e| format!("Khong ghi duoc marker Verlox ({proto}): {e}"))?;
+        .map_err(|e| format!("Không ghi được marker Verlox ({proto}): {e}"))?;
     let cmd = key
         .create("shell\\open\\command")
-        .map_err(|e| format!("Khong tao duoc shell\\open\\command ({proto}): {e}"))?;
+        .map_err(|e| format!("Không tạo được shell\\open\\command ({proto}): {e}"))?;
     cmd.set_string("", format!("\"{}\" \"%1\"", exe.display()))
-        .map_err(|e| format!("Khong ghi duoc lenh mo protocol ({proto}): {e}"))?;
+        .map_err(|e| format!("Không ghi được lệnh mở protocol ({proto}): {e}"))?;
     Ok(())
 }
 
@@ -27,22 +27,22 @@ fn unregister_proto(base: &str, proto: &str) -> Result<(), String> {
     let path = format!("{base}\\{proto}");
     let Ok(key) = CURRENT_USER.open(&path) else {
         return Err(format!(
-            "Protocol {proto} chua duoc dang ky — khong co gi de go."
+            "Protocol {proto} chưa được đăng ký — không có gì để gỡ."
         ));
     };
     if key.get_string(MARKER_VALUE).is_err() {
         return Err(format!(
-            "Protocol {proto} khong do Verlox dang ky — khong go de tranh anh huong dang ky goc cua Roblox."
+            "Protocol {proto} không do Verlox đăng ký — không gỡ để tránh ảnh hưởng đăng ký gốc của Roblox."
         ));
     }
     CURRENT_USER
         .remove_tree(&path)
-        .map_err(|e| format!("Khong go duoc khoa registry {proto}: {e}"))
+        .map_err(|e| format!("Không gỡ được khóa registry {proto}: {e}"))
 }
 
 pub fn register_protocol(exe: &Path) -> Result<(), String> {
     if !exe.is_file() {
-        return Err(format!("Khong tim thay {}", exe.display()));
+        return Err(format!("Không tìm thấy {}", exe.display()));
     }
     for proto in PROTOCOLS {
         register_proto(CLASSES_PATH, proto, exe)?;
@@ -119,7 +119,7 @@ mod tests {
             .set_string("", "URL:roblox Protocol")
             .unwrap();
         let err = unregister_proto(&b, "roblox").unwrap_err();
-        assert!(err.contains("khong do Verlox dang ky"));
+        assert!(err.contains("không do Verlox đăng ký"));
         assert!(CURRENT_USER.open(format!("{b}\\roblox")).is_ok());
         let _ = CURRENT_USER.remove_tree(&b);
     }
@@ -128,6 +128,6 @@ mod tests {
     fn unregister_missing_key_is_error() {
         let b = base("none");
         let err = unregister_proto(&b, "roblox").unwrap_err();
-        assert!(err.contains("chua duoc dang ky"));
+        assert!(err.contains("chưa được đăng ký"));
     }
 }

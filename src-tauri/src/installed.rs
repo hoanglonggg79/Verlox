@@ -112,7 +112,7 @@ pub fn clear_dir_contents(dir: &Path) -> Result<u64, String> {
         } else {
             std::fs::remove_file(&p)
         };
-        res.map_err(|e| format!("Khong xoa duoc {}: {e}", p.display()))?;
+        res.map_err(|e| format!("Không xóa được {}: {e}", p.display()))?;
     }
     Ok(removed)
 }

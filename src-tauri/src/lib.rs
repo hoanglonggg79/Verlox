@@ -22,7 +22,7 @@ fn http_client() -> reqwest::Client {
         .user_agent(concat!("Verlox/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(10))
         .build()
-        .expect("khoi tao HTTP client that bai")
+        .expect("khởi tạo HTTP client thất bại")
 }
 
 #[derive(Serialize)]
@@ -53,9 +53,15 @@ async fn get_history_versions() -> Result<Vec<String>, String> {
     let client = http_client();
     let list = versions::fetch_deploy_history(&client).await;
     if list.is_empty() {
-        return Err("Khong lay duoc danh sach version tu DeployHistory.txt".to_string());
+        return Err("Không lấy được danh sách version từ DeployHistory.txt".to_string());
     }
     Ok(list)
+}
+
+#[tauri::command]
+async fn list_executors() -> Result<Vec<versions::ExecutorInfo>, String> {
+    let client = http_client();
+    versions::fetch_executors(&client).await
 }
 
 #[tauri::command]
@@ -71,9 +77,9 @@ fn get_download_history() -> Vec<history::HistoryEntry> {
 #[tauri::command]
 fn import_legacy_history(file_path: String) -> Result<usize, String> {
     let text = std::fs::read_to_string(&file_path)
-        .map_err(|e| format!("Khong doc duoc {}: {e}", file_path))?;
+        .map_err(|e| format!("Không đọc được {}: {e}", file_path))?;
     let parsed: Vec<history::HistoryEntry> =
-        serde_json::from_str(&text).map_err(|e| format!("JSON cu khong hop le: {e}"))?;
+        serde_json::from_str(&text).map_err(|e| format!("JSON cũ không hợp lệ: {e}"))?;
     let mut entries = parsed;
     for e in history::load() {
         if !entries.iter().any(|x| x.hash == e.hash) {
@@ -88,11 +94,11 @@ fn import_legacy_history(file_path: String) -> Result<usize, String> {
 
 #[tauri::command]
 fn launch_version(hash: String) -> Result<(), String> {
-    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash khong hop le".to_string())?;
+    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash không hợp lệ".to_string())?;
     let dir = versions_root().join(&vh);
     let exe = dir.join("RobloxPlayerBeta.exe");
     if !exe.is_file() {
-        return Err(format!("Khong tim thay {}", exe.display()));
+        return Err(format!("Không tìm thấy {}", exe.display()));
     }
     std::process::Command::new(&exe)
         .current_dir(&dir)
@@ -105,7 +111,7 @@ fn launch_version(hash: String) -> Result<(), String> {
 fn open_folder(path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
     if !p.is_dir() {
-        return Err(format!("Thu muc khong ton tai: {path}"));
+        return Err(format!("Thư mục không tồn tại: {path}"));
     }
     std::process::Command::new("explorer.exe")
         .arg(&p)
@@ -116,10 +122,10 @@ fn open_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn delete_version(hash: String) -> Result<(), String> {
-    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash khong hop le".to_string())?;
+    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash không hợp lệ".to_string())?;
     let dir = versions_root().join(&vh);
     if !dir.is_dir() {
-        return Err(format!("Phien ban khong ton tai: {vh}"));
+        return Err(format!("Phiên bản không tồn tại: {vh}"));
     }
     std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())
 }
@@ -128,7 +134,7 @@ fn delete_version(hash: String) -> Result<(), String> {
 fn clear_cache(state: tauri::State<'_, DownloadState>) -> Result<u64, String> {
     if state.running.load(Ordering::SeqCst) {
         return Err(
-            "Dang co tac vu tai dang chay — khong the don cache luc nay, thu lai sau khi tai xong."
+            "Đang có tác vụ tải đang chạy — không thể dọn cache lúc này, thử lại sau khi tải xong."
                 .to_string(),
         );
     }
@@ -231,19 +237,19 @@ async fn start_download(
     options: Option<DownloadOptions>,
 ) -> Result<(), String> {
     let vh = hash::validate_hash(&hash).ok_or_else(|| {
-        "Hash khong hop le: can version-xxxxxxxxxxxxxxxx (16 ky tu hex)".to_string()
+        "Hash không hợp lệ: cần version-xxxxxxxxxxxxxxxx (16 ký tự hex)".to_string()
     })?;
     let dir = match install_dir.as_deref() {
         Some(d) if !d.trim().is_empty() => PathBuf::from(d).join(&vh),
         _ => versions_root().join(&vh),
     };
     if is_unsafe_dir(&dir) {
-        return Err("Thu muc cai dat nam trong khu vuc he thong khong an toan".to_string());
+        return Err("Thư mục cài đặt nằm trong khu vực hệ thống không an toàn".to_string());
     }
     let opts = options.unwrap_or_default();
     let client = cdn::download_client()?;
     if state.running.swap(true, Ordering::SeqCst) {
-        return Err("Dang co mot tac vu tai khac chay — hay huy hoac doi no xong.".to_string());
+        return Err("Đang có một tác vụ tải khác chạy — hãy hủy hoặc đợi nó xong.".to_string());
     }
     if dir.is_dir() && dir_non_empty(&dir) && !opts.overwrite {
         state.running.store(false, Ordering::SeqCst);
@@ -278,7 +284,7 @@ async fn install_task(
         Ok(true) => {
             emit_log(
                 &app,
-                &format!("Hoan tat! → {}", install_dir.display()),
+                &format!("Hoàn tất! → {}", install_dir.display()),
                 "success",
             );
             let _ = app.emit(
@@ -307,28 +313,28 @@ async fn install_inner(
     opts: &DownloadOptions,
     cancel: &AtomicBool,
 ) -> Result<bool, (String, String)> {
-    emit_log(app, "Dang kiem tra CDN...", "warning");
+    emit_log(app, "Đang kiểm tra CDN...", "warning");
     let cdn = cdn::probe_cdns(client, vh).await;
-    emit_log(app, &format!("Dung CDN: {cdn}"), "muted");
+    emit_log(app, &format!("Dùng CDN: {cdn}"), "muted");
     if cancel.load(Ordering::Relaxed) {
-        emit_log(app, "Da huy.", "muted");
+        emit_log(app, "Đã hủy.", "muted");
         return Ok(false);
     }
 
-    emit_log(app, "Dang tai danh sach goi (manifest)...", "warning");
+    emit_log(app, "Đang tải danh sách gói (manifest)...", "warning");
     let text = cdn::fetch_manifest_text(client, cdn, vh)
         .await
-        .map_err(|e| ("Khong lay duoc manifest".to_string(), e))?;
+        .map_err(|e| ("Không lấy được manifest".to_string(), e))?;
     if cancel.load(Ordering::Relaxed) {
-        emit_log(app, "Da huy.", "muted");
+        emit_log(app, "Đã hủy.", "muted");
         return Ok(false);
     }
 
     let packages = manifest::parse_manifest(&text);
     if packages.is_empty() {
         return Err((
-            "Manifest trong".to_string(),
-            "Khong doc duoc danh sach goi tu CDN.\nThu lai hoac kiem tra version hash.".to_string(),
+            "Manifest trống".to_string(),
+            "Không đọc được danh sách gói từ CDN.\nThử lại hoặc kiểm tra version hash.".to_string(),
         ));
     }
     let zips: Vec<&manifest::Package> = packages
@@ -338,24 +344,24 @@ async fn install_inner(
     let total_bytes: u64 = zips.iter().map(|p| p.compressed).sum();
     emit_log(
         app,
-        &format!(
-            "Tim thay {} goi ({})",
-            zips.len(),
-            cdn::fmt_bytes(total_bytes)
-        ),
+            &format!(
+                "Tìm thấy {} gói ({})",
+                zips.len(),
+                cdn::fmt_bytes(total_bytes)
+            ),
         "muted",
     );
 
     std::fs::create_dir_all(install_dir).map_err(|e| {
         (
-            "Khong tao duoc thu muc cai dat".to_string(),
+            "Không tạo được thư mục cài đặt".to_string(),
             format!("{}\n\n{e}", install_dir.display()),
         )
     })?;
     let cache_dir = downloads_root();
     std::fs::create_dir_all(&cache_dir).map_err(|e| {
         (
-            "Khong tao duoc thu muc cache".to_string(),
+            "Không tạo được thư mục cache".to_string(),
             format!("{}\n\n{e}", cache_dir.display()),
         )
     })?;
@@ -363,7 +369,7 @@ async fn install_inner(
     let mut downloaded: u64 = 0;
     for (idx, pkg) in zips.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            emit_log(app, "Da huy.", "muted");
+            emit_log(app, "Đã hủy.", "muted");
             return Ok(false);
         }
         let name = &pkg.name;
@@ -380,10 +386,10 @@ async fn install_inner(
                 .map(|m| m.eq_ignore_ascii_case(&pkg.md5))
                 .unwrap_or(false);
             if ok {
-                emit_log(app, "Cache OK, bo qua tai.", "muted");
+                emit_log(app, "Cache OK, bỏ qua tải.", "muted");
             } else {
                 let _ = std::fs::remove_file(&cache_path);
-                emit_log(app, "Cache hong, tai lai.", "warning");
+                emit_log(app, "Cache hỏng, tải lại.", "warning");
             }
         }
 
@@ -411,9 +417,9 @@ async fn install_inner(
                 },
             )
             .await
-            .map_err(|e| ("Loi tai goi".to_string(), e))?;
+            .map_err(|e| ("Lỗi tải gói".to_string(), e))?;
             if !finished {
-                emit_log(app, "Da huy.", "muted");
+                emit_log(app, "Đã hủy.", "muted");
                 return Ok(false);
             }
         }
@@ -427,10 +433,10 @@ async fn install_inner(
         emit_progress_values(app, overall_pct, name, 100.0, 0.0, 0.0);
 
         if cancel.load(Ordering::Relaxed) {
-            emit_log(app, "Da huy.", "muted");
+            emit_log(app, "Đã hủy.", "muted");
             return Ok(false);
         }
-        emit_log(app, &format!("Giai nen {name}..."), "muted");
+        emit_log(app, &format!("Giải nén {name}..."), "muted");
         let zip_path = cache_path.clone();
         let out_dir = install_dir.to_path_buf();
         let pkg_name = name.clone();
@@ -439,17 +445,17 @@ async fn install_inner(
             extract::extract_pkg(&zip_path, &out_dir, &pkg_name, w2)
         })
         .await
-        .map_err(|e| ("Loi giai nen".to_string(), format!("{name}\n\n{e}")))?
-        .map_err(|e| ("Loi giai nen".to_string(), format!("{name}\n\n{e}")))?;
+        .map_err(|e| ("Lỗi giải nén".to_string(), format!("{name}\n\n{e}")))?
+        .map_err(|e| ("Lỗi giải nén".to_string(), format!("{name}\n\n{e}")))?;
     }
 
     if cancel.load(Ordering::Relaxed) {
-        emit_log(app, "Da huy.", "muted");
+        emit_log(app, "Đã hủy.", "muted");
         return Ok(false);
     }
     extract::write_app_settings(install_dir)
-        .map_err(|e| ("Loi ghi AppSettings.xml".to_string(), e))?;
-    emit_log(app, "Da ghi AppSettings.xml.", "muted");
+        .map_err(|e| ("Lỗi ghi AppSettings.xml".to_string(), e))?;
+    emit_log(app, "Đã ghi AppSettings.xml.", "muted");
 
     if opts.register_protocol {
         let exe = install_dir.join("RobloxPlayerBeta.exe");
@@ -457,15 +463,15 @@ async fn install_inner(
             match win::register_protocol(&exe) {
                 Ok(()) => emit_log(
                     app,
-                    "Da dang ky protocol roblox-player:// cho phien ban nay.",
+                    "Đã đăng ký protocol roblox-player:// cho phiên bản này.",
                     "success",
                 ),
-                Err(e) => emit_log(app, &format!("Khong dang ky duoc protocol: {e}"), "warning"),
+                Err(e) => emit_log(app, &format!("Không đăng ký được protocol: {e}"), "warning"),
             }
         } else {
             emit_log(
                 app,
-                "Khong tim thay RobloxPlayerBeta.exe — bo qua dang ky protocol.",
+                "Không tìm thấy RobloxPlayerBeta.exe — bỏ qua đăng ký protocol.",
                 "warning",
             );
         }
@@ -475,24 +481,24 @@ async fn install_inner(
         let exe = install_dir.join("RobloxPlayerBeta.exe");
         if exe.is_file() {
             match make_shortcut(&exe, vh) {
-                Ok(()) => emit_log(app, "Da tao shortcut tren Desktop.", "success"),
-                Err(e) => emit_log(app, &format!("Khong tao duoc shortcut: {e}"), "warning"),
+                Ok(()) => emit_log(app, "Đã tạo shortcut trên Desktop.", "success"),
+                Err(e) => emit_log(app, &format!("Không tạo được shortcut: {e}"), "warning"),
             }
         }
     }
 
     if let Err(e) = history::push(vh, &install_dir.to_string_lossy()) {
-        emit_log(app, &format!("Khong luu duoc lich su: {e}"), "warning");
+        emit_log(app, &format!("Không lưu được lịch sử: {e}"), "warning");
     }
     Ok(true)
 }
 
 #[tauri::command]
 fn register_protocol(hash: String) -> Result<(), String> {
-    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash khong hop le".to_string())?;
+    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash không hợp lệ".to_string())?;
     let exe = versions_root().join(&vh).join("RobloxPlayerBeta.exe");
     if !exe.is_file() {
-        return Err(format!("Khong tim thay {}", exe.display()));
+        return Err(format!("Không tìm thấy {}", exe.display()));
     }
     win::register_protocol(&exe)
 }
@@ -504,20 +510,22 @@ fn unregister_protocol() -> Result<(), String> {
 
 #[tauri::command]
 fn create_shortcut(hash: String) -> Result<(), String> {
-    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash khong hop le".to_string())?;
+    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash không hợp lệ".to_string())?;
     let exe = versions_root().join(&vh).join("RobloxPlayerBeta.exe");
     if !exe.is_file() {
-        return Err(format!("Khong tim thay {}", exe.display()));
+        return Err(format!("Không tìm thấy {}", exe.display()));
     }
     make_shortcut(&exe, &vh)
 }
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(DownloadState::default())
         .invoke_handler(tauri::generate_handler![
             get_live_versions,
             get_history_versions,
+            list_executors,
             list_installed_versions,
             get_download_history,
             import_legacy_history,
@@ -532,7 +540,7 @@ pub fn run() {
             create_shortcut
         ])
         .run(tauri::generate_context!())
-        .expect("Verlox gap loi khi khoi chay");
+        .expect("Verlox gặp lỗi khi khởi chạy");
 }
 
 #[cfg(test)]
