@@ -40,7 +40,7 @@ cargo check                 # trong src-tauri — verify compile nhanh
 
 `devUrl` = `http://localhost:5173`, `frontendDist` = `../dist` (đã đổi từ `../src` khi migrate React-Vite).
 
-Môi trường đã verify trên máy này (2026-11-05): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 27/27 pass (sau bước 2 + bước 3 + vá lỗi logic 2026-11-06), 455 crates đã lock trong `src-tauri/Cargo.lock`.
+Môi trường đã verify trên máy này (2026-11-05): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 33/33 pass (sau bước 2 + bước 3 + vá lỗi logic 2026-11-06 + vá `.part` thiếu quyền write + vá giải nén content-*.zip), 455 crates đã lock trong `src-tauri/Cargo.lock`.
 
 Yêu cầu thêm cho máy khác: **VS Build Tools (MSVC linker)** khi build release, **WebView2 Runtime** (Windows 10/11 có sẵn).
 
@@ -336,4 +336,6 @@ Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + ze
 
 - Đổi tên repo `RobloxVersionDownloader` → `verlox`: chỉ đổi tên thư mục, không ảnh hưởng gì (`identifier` Tauri đã là `com.hoanglong.verlox`).
 - Git đã khởi tạo ngày 2026-11-06 (nhánh `main`): baseline commit chụp trạng thái "sau bước 2", sau đó commit vá 3 lỗi logic (clear_cache đếm size trước khi xóa / probe CDN chỉ chấp nhận HTTP 200 / RunningGuard reset cờ khi panic). Quy ước: commit sau mỗi tính năng hoàn chỉnh và ổn định.
+- 2026-11-06: commit bước 4 (UI rewrite React + executor pill). Phát hiện + vá lỗi `download_pkg` mở `.part` thiếu `write(true)` ở nhánh tải mới — Windows std từ chối "creating or truncating a file requires write or append access", khiến **mọi** lần tải mới fail từ bước 2 (đường chạy thật không có test). Đã tách helper `cdn::open_part` + test hồi quy cho cả nhánh fresh lẫn resume.
+- 2026-11-06 (2): lỗi giải nén `content-*.zip` — zip của Roblox đóng gói kiểu Windows cũ: entry dùng `\` làm separator và có entry gốc tên chỉ là `\`; `zip::ZipArchive::extract()` từ chối với "invalid Zip archive: Invalid file path" (Python `extractall` thì sanitize nên bản 1.2 chạy được). Đã thay bằng vòng giải nén tự viết trong `extract::extract_zip` + `sanitize_entry_name` đúng ngữ nghĩa `zipfile.extractall` (bỏ `''`/`.`/`..`, strip drive + leading slash, bỏ qua entry rác, NUL → skip) — an toàn zip-slip vì mọi path đều nằm trong out_dir; test hồi quy tái tạo zip kiểu Roblox + đã verify trực tiếp với file `content-avatar.zip` thật trong cache (73 file).
 - `API_Docs.txt` ở root là tài liệu WEAO gốc bản update 2026-11 — đối chiếu trước khi thêm field mới của WEAO.

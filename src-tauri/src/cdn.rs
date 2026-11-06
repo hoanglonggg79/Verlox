@@ -144,6 +144,17 @@ pub struct PkgProgress {
     pub eta_secs: f64,
 }
 
+async fn open_part(part: &Path, resume_pos: u64) -> std::io::Result<tokio::fs::File> {
+    let mut opts = tokio::fs::OpenOptions::new();
+    opts.create(true);
+    if resume_pos > 0 {
+        opts.append(true);
+    } else {
+        opts.write(true).truncate(true);
+    }
+    opts.open(part).await
+}
+
 pub async fn download_pkg<F>(
     client: &reqwest::Client,
     cdn: &str,
@@ -195,11 +206,7 @@ where
     }
 
     let pkg_size = resp.content_length().map_or(0, |len| len + resume_pos);
-    let mut file = tokio::fs::OpenOptions::new()
-        .create(true)
-        .append(resume_pos > 0)
-        .truncate(resume_pos == 0)
-        .open(&part)
+    let mut file = open_part(&part, resume_pos)
         .await
         .map_err(|e| {
             format!(
@@ -313,5 +320,30 @@ mod tests {
             "900150983cd24fb0d6963f7d28e17f72"
         );
         std::fs::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn open_part_fresh_mode_creates_and_truncates() {
+        let dir = std::env::temp_dir().join("verlox-part-open-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("pkg.zip.part");
+        let _ = std::fs::remove_file(&part);
+
+        let mut f = open_part(&part, 0).await.unwrap();
+        f.write_all(b"abc").await.unwrap();
+        f.flush().await.unwrap();
+        drop(f);
+
+        let mut f = open_part(&part, 0).await.unwrap();
+        f.write_all(b"xyz").await.unwrap();
+        f.flush().await.unwrap();
+        drop(f);
+        assert_eq!(std::fs::read(&part).unwrap(), b"xyz");
+
+        let mut f = open_part(&part, 3).await.unwrap();
+        f.write_all(b"def").await.unwrap();
+        drop(f);
+        assert_eq!(std::fs::read(&part).unwrap(), b"xyzdef");
+        std::fs::remove_file(&part).unwrap();
     }
 }
