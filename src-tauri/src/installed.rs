@@ -17,10 +17,6 @@ pub fn downloads_root() -> PathBuf {
     roblox_local_root().join("Roblox").join("Downloads")
 }
 
-pub fn verlox_root() -> PathBuf {
-    roblox_local_root().join("Verlox")
-}
-
 const UNSAFE_EXACT: &[&str] = &[
     "c:\\windows",
     "c:\\windows\\system32",

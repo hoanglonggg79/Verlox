@@ -1,7 +1,6 @@
 mod cdn;
 mod extract;
 mod hash;
-mod history;
 mod installed;
 mod manifest;
 mod versions;
@@ -12,9 +11,11 @@ use installed::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 fn http_client() -> reqwest::Client {
@@ -25,7 +26,7 @@ fn http_client() -> reqwest::Client {
         .expect("khởi tạo HTTP client thất bại")
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct LiveVersions {
     latest: Option<String>,
@@ -35,67 +36,106 @@ struct LiveVersions {
     previous_mac: Option<String>,
 }
 
-#[tauri::command]
-async fn get_live_versions() -> Result<LiveVersions, String> {
-    let client = http_client();
-    let (previous_windows, previous_mac) = versions::fetch_previous_pair(&client).await;
-    Ok(LiveVersions {
-        latest: versions::fetch_latest(&client).await,
-        studio_latest: versions::fetch_studio_latest(&client).await,
-        future_windows: versions::fetch_future_windows(&client).await,
-        previous_windows,
-        previous_mac,
-    })
+const API_CACHE_TTL_SECS: u64 = 300;
+
+struct CacheEntry<T> {
+    at: Instant,
+    value: T,
 }
 
-#[tauri::command]
-async fn get_history_versions() -> Result<Vec<String>, String> {
-    let client = http_client();
-    let list = versions::fetch_deploy_history(&client).await;
-    if list.is_empty() {
-        return Err("Không lấy được danh sách version từ DeployHistory.txt".to_string());
+#[derive(Default)]
+struct ApiCache {
+    live: Mutex<Option<CacheEntry<LiveVersions>>>,
+    executors: Mutex<Option<CacheEntry<Vec<versions::ExecutorInfo>>>>,
+    umi: Mutex<Option<CacheEntry<versions::ExecutorInfo>>>,
+}
+
+async fn fetch_cached<T: Clone>(
+    slot: &Mutex<Option<CacheEntry<T>>>,
+    force: bool,
+    fetch: impl Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let ttl = Duration::from_secs(API_CACHE_TTL_SECS);
+    if !force {
+        let fresh = slot.lock().ok().and_then(|g| {
+            g.as_ref()
+                .filter(|e| e.at.elapsed() < ttl)
+                .map(|e| e.value.clone())
+        });
+        if let Some(value) = fresh {
+            return Ok(value);
+        }
     }
-    Ok(list)
+    match fetch.await {
+        Ok(value) => {
+            if let Ok(mut g) = slot.lock() {
+                *g = Some(CacheEntry {
+                    at: Instant::now(),
+                    value: value.clone(),
+                });
+            }
+            Ok(value)
+        }
+        Err(err) => {
+            if !force {
+                if let Ok(g) = slot.lock() {
+                    if let Some(entry) = g.as_ref() {
+                        return Ok(entry.value.clone());
+                    }
+                }
+            }
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]
-async fn list_executors() -> Result<Vec<versions::ExecutorInfo>, String> {
+async fn get_live_versions(
+    cache: tauri::State<'_, ApiCache>,
+    force: Option<bool>,
+) -> Result<LiveVersions, String> {
+    let force = force.unwrap_or(false);
     let client = http_client();
-    versions::fetch_executors(&client).await
+    fetch_cached(&cache.live, force, async {
+        let (previous_windows, previous_mac) = versions::fetch_previous_pair(&client).await;
+        Ok(LiveVersions {
+            latest: versions::fetch_latest(&client).await,
+            studio_latest: versions::fetch_studio_latest(&client).await,
+            future_windows: versions::fetch_future_windows(&client).await,
+            previous_windows,
+            previous_mac,
+        })
+    })
+    .await
 }
 
 #[tauri::command]
-async fn get_umi_executor() -> Result<versions::ExecutorInfo, String> {
+async fn list_executors(
+    cache: tauri::State<'_, ApiCache>,
+    force: Option<bool>,
+) -> Result<Vec<versions::ExecutorInfo>, String> {
     let client = http_client();
-    versions::fetch_umi_executor(&client).await
+    fetch_cached(&cache.executors, force.unwrap_or(false), async {
+        versions::fetch_executors(&client).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn get_umi_executor(
+    cache: tauri::State<'_, ApiCache>,
+    force: Option<bool>,
+) -> Result<versions::ExecutorInfo, String> {
+    let client = http_client();
+    fetch_cached(&cache.umi, force.unwrap_or(false), async {
+        versions::fetch_umi_executor(&client).await
+    })
+    .await
 }
 
 #[tauri::command]
 fn list_installed_versions(with_sizes: Option<bool>) -> Result<Vec<InstalledVersion>, String> {
     installed::scan(with_sizes.unwrap_or(false))
-}
-
-#[tauri::command]
-fn get_download_history() -> Vec<history::HistoryEntry> {
-    history::load()
-}
-
-#[tauri::command]
-fn import_legacy_history(file_path: String) -> Result<usize, String> {
-    let text = std::fs::read_to_string(&file_path)
-        .map_err(|e| format!("Không đọc được {}: {e}", file_path))?;
-    let parsed: Vec<history::HistoryEntry> =
-        serde_json::from_str(&text).map_err(|e| format!("JSON cũ không hợp lệ: {e}"))?;
-    let mut entries = parsed;
-    for e in history::load() {
-        if !entries.iter().any(|x| x.hash == e.hash) {
-            entries.push(e);
-        }
-    }
-    entries.truncate(history::MAX_HISTORY);
-    let saved = entries.len();
-    history::save(&entries)?;
-    Ok(saved)
 }
 
 #[tauri::command]
@@ -127,11 +167,19 @@ fn open_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn delete_version(hash: String) -> Result<(), String> {
+fn delete_version(hash: String, state: tauri::State<'_, DownloadState>) -> Result<(), String> {
     let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash không hợp lệ".to_string())?;
     let dir = versions_root().join(&vh);
     if !dir.is_dir() {
         return Err(format!("Phiên bản không tồn tại: {vh}"));
+    }
+    if let Ok(slot) = state.current_dir.lock() {
+        if is_active_download_target(slot.as_deref(), &dir) {
+            return Err(
+                "Không xóa được — version này đang được tải dở.\nHủy tải hoặc đợi hoàn tất rồi xóa lại."
+                    .to_string(),
+            );
+        }
     }
     std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())
 }
@@ -164,14 +212,25 @@ struct DownloadOptions {
 pub struct DownloadState {
     cancel: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
+    current_dir: Arc<Mutex<Option<PathBuf>>>,
 }
 
-struct RunningGuard(Arc<AtomicBool>);
+struct RunningGuard {
+    running: Arc<AtomicBool>,
+    current_dir: Arc<Mutex<Option<PathBuf>>>,
+}
 
 impl Drop for RunningGuard {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::SeqCst);
+        if let Ok(mut slot) = self.current_dir.lock() {
+            *slot = None;
+        }
     }
+}
+
+fn is_active_download_target(current: Option<&Path>, dir: &Path) -> bool {
+    current == Some(dir)
 }
 
 fn dir_non_empty(p: &Path) -> bool {
@@ -262,10 +321,17 @@ async fn start_download(
         return Err(format!("EXISTS::{}", dir.display()));
     }
     state.cancel.store(false, Ordering::SeqCst);
+    if let Ok(mut slot) = state.current_dir.lock() {
+        *slot = Some(dir.clone());
+    }
     let cancel = state.cancel.clone();
     let running = state.running.clone();
+    let current_dir = state.current_dir.clone();
     tauri::async_runtime::spawn(async move {
-        let _guard = RunningGuard(running);
+        let _guard = RunningGuard {
+            running,
+            current_dir,
+        };
         install_task(app, client, vh, dir, opts, cancel).await;
     });
     Ok(())
@@ -493,9 +559,6 @@ async fn install_inner(
         }
     }
 
-    if let Err(e) = history::push(vh, &install_dir.to_string_lossy()) {
-        emit_log(app, &format!("Không lưu được lịch sử: {e}"), "warning");
-    }
     Ok(true)
 }
 
@@ -528,14 +591,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(DownloadState::default())
+        .manage(ApiCache::default())
         .invoke_handler(tauri::generate_handler![
             get_live_versions,
-            get_history_versions,
             list_executors,
             get_umi_executor,
             list_installed_versions,
-            get_download_history,
-            import_legacy_history,
             launch_version,
             open_folder,
             delete_version,
@@ -554,24 +615,95 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    fn guard_fixture() -> (Arc<AtomicBool>, Arc<Mutex<Option<PathBuf>>>) {
+        (
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(Mutex::new(Some(PathBuf::from(r"C:\roblox\version-abc")))),
+        )
+    }
+
     #[test]
     fn running_guard_resets_on_drop() {
-        let flag = Arc::new(AtomicBool::new(true));
+        let (flag, dir) = guard_fixture();
         {
-            let _guard = RunningGuard(flag.clone());
+            let _guard = RunningGuard {
+                running: flag.clone(),
+                current_dir: dir.clone(),
+            };
             assert!(flag.load(Ordering::SeqCst));
+            assert_eq!(
+                *dir.lock().unwrap(),
+                Some(PathBuf::from(r"C:\roblox\version-abc"))
+            );
         }
         assert!(!flag.load(Ordering::SeqCst));
+        assert_eq!(*dir.lock().unwrap(), None);
     }
 
     #[test]
     fn running_guard_resets_on_panic() {
-        let flag = Arc::new(AtomicBool::new(true));
+        let (flag, dir) = guard_fixture();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = RunningGuard(flag.clone());
+            let _guard = RunningGuard {
+                running: flag.clone(),
+                current_dir: dir.clone(),
+            };
             panic!("download task panic");
         }));
         assert!(result.is_err());
         assert!(!flag.load(Ordering::SeqCst));
+        assert_eq!(*dir.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn active_download_target_matches_only_exact_dir() {
+        let target = Path::new(r"C:\roblox\Versions\version-abc");
+        assert!(is_active_download_target(Some(target), target));
+        assert!(!is_active_download_target(
+            Some(Path::new(r"C:\roblox\Versions\version-xyz")),
+            target
+        ));
+        assert!(!is_active_download_target(None, target));
+    }
+
+    #[tokio::test]
+    async fn cache_serves_fresh_hit_without_fetch() {
+        let slot: Mutex<Option<CacheEntry<u32>>> = Mutex::new(Some(CacheEntry {
+            at: Instant::now(),
+            value: 7,
+        }));
+        let out = fetch_cached(&slot, false, async { Err::<u32, _>("boom".to_string()) }).await;
+        assert_eq!(out.unwrap(), 7);
+    }
+
+    #[tokio::test]
+    async fn cache_serves_stale_on_fetch_error() {
+        let stale_at = Instant::now()
+            .checked_sub(Duration::from_secs(600))
+            .unwrap();
+        let slot: Mutex<Option<CacheEntry<u32>>> = Mutex::new(Some(CacheEntry {
+            at: stale_at,
+            value: 3,
+        }));
+        let out = fetch_cached(&slot, false, async { Err::<u32, _>("429".to_string()) }).await;
+        assert_eq!(out.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn cache_force_bypasses_hit_and_error_propagates_when_empty() {
+        let slot: Mutex<Option<CacheEntry<u32>>> = Mutex::new(Some(CacheEntry {
+            at: Instant::now(),
+            value: 7,
+        }));
+        let out = fetch_cached(&slot, true, async { Err::<u32, _>("boom".to_string()) }).await;
+        assert!(out.is_err());
+
+        let empty: Mutex<Option<CacheEntry<u32>>> = Mutex::new(None);
+        let out = fetch_cached(&empty, false, async { Err::<u32, _>("boom".to_string()) }).await;
+        assert!(out.is_err());
+
+        let out = fetch_cached(&empty, false, async { Ok::<u32, _>(9) }).await;
+        assert_eq!(out.unwrap(), 9);
+        assert_eq!(empty.lock().unwrap().as_ref().map(|e| e.value), Some(9));
     }
 }

@@ -30,8 +30,6 @@ export default function App() {
   const [live, setLive] = useState(null);
   const [liveBusy, setLiveBusy] = useState(false);
   const [installed, setInstalled] = useState({ loading: false, items: [] });
-  const [history, setHistory] = useState(null);
-  const [deployVersions, setDeployVersions] = useState([]);
   const [executors, setExecutors] = useState([]);
   const [executorsLoading, setExecutorsLoading] = useState(false);
   const [executorsLoaded, setExecutorsLoaded] = useState(false);
@@ -88,23 +86,13 @@ export default function App() {
     [pushLog]
   );
 
-  const refreshHistory = useCallback(async () => {
-    if (!hasTauri) return;
-    try {
-      const entries = await invoke("get_download_history");
-      setHistory(entries);
-    } catch (err) {
-      pushLog(String(err), "error");
-    }
-  }, [pushLog]);
-
-  const loadExecutors = useCallback(async () => {
+  const loadExecutors = useCallback(async (force = false) => {
     if (!hasTauri || executorsLoading) return;
     setExecutorsLoading(true);
     try {
       const [weaoRes, umiRes] = await Promise.allSettled([
-        invoke("list_executors"),
-        invoke("get_umi_executor"),
+        invoke("list_executors", { force }),
+        invoke("get_umi_executor", { force }),
       ]);
       if (weaoRes.status === "rejected") pushLog(String(weaoRes.reason), "error");
       if (umiRes.status === "rejected") pushLog(String(umiRes.reason), "error");
@@ -222,16 +210,6 @@ export default function App() {
     }
   }, [pushLog]);
 
-  const loadDeployHistory = useCallback(async () => {
-    try {
-      const versions = await invoke("get_history_versions");
-      setDeployVersions(versions);
-      pushLog(`Nạp ${versions.length} version từ DeployHistory.txt`, "ok");
-    } catch (err) {
-      pushLog(String(err), "error");
-    }
-  }, [pushLog]);
-
   const runVersion = useCallback(
     async (h) => {
       try {
@@ -299,40 +277,6 @@ export default function App() {
     }
   }, [pushLog]);
 
-  const importLegacyHistory = useCallback(async () => {
-    const p = window.prompt("Đường dẫn đến download_history.json cũ:", "");
-    if (!p) return;
-    try {
-      const saved = await invoke("import_legacy_history", { filePath: p });
-      pushLog(`Đã import lịch sử (${saved} bản ghi)`, "ok");
-      refreshHistory();
-    } catch (err) {
-      pushLog(String(err), "error");
-    }
-  }, [pushLog, refreshHistory]);
-
-  const focusInput = useCallback(() => {
-    requestAnimationFrame(() => {
-      document.getElementById("custom-hash")?.focus();
-    });
-  }, []);
-
-  const pickDeployHash = useCallback(
-    (hash) => {
-      setCustomHash(hash);
-      focusInput();
-    },
-    [focusInput]
-  );
-
-  const setCustomFromHistory = useCallback(
-    (hash) => {
-      setCustomHash(hash);
-      focusInput();
-    },
-    [focusInput]
-  );
-
   useEffect(() => {
     if (!hasTauri) {
       pushLog("Tauri API không có — hãy chạy qua `npm run dev`", "error");
@@ -357,7 +301,6 @@ export default function App() {
           const dir = e.payload?.installDir ?? null;
           markDownloadDone(dir);
           if (dir) {
-            refreshHistory();
             refreshInstalled(true);
           }
         })
@@ -376,7 +319,6 @@ export default function App() {
     })();
     refreshLive();
     refreshInstalled(true);
-    refreshHistory();
     return () => {
       alive = false;
       offs.forEach((f) => f());
@@ -410,9 +352,6 @@ export default function App() {
             onOptionChange={(key, value) => setOptions((s) => ({ ...s, [key]: value }))}
             onDownloadHash={startDownload}
             onCancelDownload={cancelDownload}
-            deployVersions={deployVersions}
-            onLoadDeploy={loadDeployHistory}
-            onPickDeploy={pickDeployHash}
             installed={installed}
             onRefreshInstalled={() => refreshInstalled(true)}
             onUnregisterProtocol={unregisterProtocol}
@@ -422,9 +361,6 @@ export default function App() {
             onShortcut={registerShortcut}
             onOpen={openFolder}
             onDeleteVersion={deleteVersion}
-            history={history}
-            onImportHistory={importLegacyHistory}
-            onFillHash={setCustomFromHistory}
           />
         ) : null}
         {tab === "logs" ? <LogsScreen logs={logs} /> : null}

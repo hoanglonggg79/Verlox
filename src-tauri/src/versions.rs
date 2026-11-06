@@ -13,7 +13,6 @@ pub const VERSION_API_PLAYER: &str =
     "https://clientsettingscdn.roblox.com/v2/client-version/WindowsPlayer";
 pub const VERSION_API_STUDIO: &str =
     "https://clientsettingscdn.roblox.com/v2/client-version/WindowsStudio";
-pub const DEPLOY_HISTORY_URL: &str = "https://setup.rbxcdn.com/DeployHistory.txt";
 
 fn weao(client: &reqwest::Client, url: &str) -> reqwest::RequestBuilder {
     client
@@ -88,36 +87,6 @@ pub async fn fetch_previous_pair(client: &reqwest::Client) -> (Option<String>, O
 
 pub async fn fetch_studio_latest(client: &reqwest::Client) -> Option<String> {
     fetch_official(client, VERSION_API_STUDIO).await
-}
-
-pub async fn fetch_deploy_history(client: &reqwest::Client) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let Ok(resp) = client.get(DEPLOY_HISTORY_URL).send().await else {
-        return out;
-    };
-    if !resp.status().is_success() {
-        return out;
-    }
-    let Ok(text) = resp.text().await else {
-        return out;
-    };
-    for line in text.lines() {
-        if !line.contains("version-") {
-            continue;
-        }
-        for part in line.split_whitespace() {
-            if let Some(vh) = validate_hash(part) {
-                if seen.insert(vh.clone()) {
-                    out.push(vh);
-                    if out.len() >= 30 {
-                        return out;
-                    }
-                }
-            }
-        }
-    }
-    out
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -229,9 +198,9 @@ pub fn umi_executor_from_texts(
         },
         rbx_version,
         detected: false,
-        free: false,
+        free: true,
         cost: None,
-        key_system: None,
+        key_system: Some(false),
     })
 }
 
@@ -355,8 +324,8 @@ mod tests {
         assert_eq!(ex.executor_version, "0.57");
         assert_eq!(ex.rbx_version, "version-f0ea5da9412f4e35");
         assert!(ex.update_status);
-        assert_eq!(ex.key_system, None);
-        assert!(!ex.free);
+        assert_eq!(ex.key_system, Some(false));
+        assert!(ex.free);
         assert_eq!(ex.cost, None);
 
         let stale = umi_executor_from_texts(

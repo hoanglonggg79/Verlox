@@ -252,21 +252,7 @@ body::before {
   text-transform: uppercase;
 }
 
-.cols {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.col-right {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
 @media (max-width: 900px) {
-  .cols,
   .cards {
     grid-template-columns: 1fr;
   }

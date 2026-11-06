@@ -1,6 +1,6 @@
 # VERLOX — Roblox Version Launcher
 
-> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 3 + rewrite UI React-Vite + executor (WEAO + Umi ngoài API)**, cập nhật 2026-11-06.
+> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 3 + rewrite UI React-Vite + executor (WEAO + Umi ngoài API) + cache TTL 5 phút; đã gỡ DeployHistory + Lịch sử download**, cập nhật 2026-11-06.
 
 ---
 
@@ -9,11 +9,11 @@
 Launcher & version manager cho Roblox Player/Studio trên Windows:
 
 - Xem hash **version trực tiếp** (mới nhất / trước đó / sắp tới) từ WEAO + API chính thức của Roblox.
-- **Sao chép hash** mới nhất, tải version bất kỳ bằng **custom hash** hoặc chọn từ **DeployHistory** (30 bản gần đây).
-- **Tải theo executor** (kế hoạch bước 4 — mô tả API ở mục 6.4): chọn executor (WEAO tracker) → app tải đúng version Roblox mà executor đó hỗ trợ.
+- **Sao chép hash** mới nhất, tải version bất kỳ bằng **custom hash**.
+- **Tải theo executor** (đã triển khai, mô tả API ở mục 6.4): chọn executor (WEAO tracker + ngoài tracker như Umi, mục 6.5) → app tải đúng version Roblox mà executor đó hỗ trợ.
 - Quét **các version đã cài trên máy** (`%LOCALAPPDATA%\Roblox\Versions`), chạy / mở thư mục / xóa từng version.
 - Cache download + MD5 verify + resume (`.part`), giống bản Python cũ.
-- Lịch sử download tương thích ngược với file `download_history.json` của bản Python.
+- Cache TTL 5 phút cho mọi query WEAO/API chính thức (`get_live_versions`, `list_executors`, `get_umi_executor`) — chống 429; nút Làm mới gọi với `force: true` bỏ qua TTL.
 
 Tiền thân: **Roblox Version Downloader 1.2** (Python + PySide6) — toàn bộ nằm trong `backup/`, chỉ để tham khảo.
 
@@ -34,13 +34,13 @@ npm run dev                 # chạy app: tauri dev → tự chạy `npm run ui:
 npm run build               # build NSIS: tauri build → tự chạy `npm run ui:build` (vite build → dist/)
 npm run ui:dev              # chỉ chạy Vite dev server (fe dev, không app)
 npm run ui:build            # chỉ build frontend
-cargo test                  # trong src-tauri — test logic thuần (hash, manifest, unsafe-dir, history)
+cargo test                  # trong src-tauri — test logic thuần (hash, manifest, unsafe-dir, cdn, extract, win, cache TTL, guard)
 cargo check                 # trong src-tauri — verify compile nhanh
 ```
 
 `devUrl` = `http://localhost:5173`, `frontendDist` = `../dist` (đã đổi từ `../src` khi migrate React-Vite).
 
-Môi trường đã verify trên máy này (2026-11-05): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 33/33 pass (sau bước 2 + bước 3 + vá lỗi logic 2026-11-06 + vá `.part` thiếu quyền write + vá giải nén content-*.zip), 455 crates đã lock trong `src-tauri/Cargo.lock`.
+Môi trường đã verify trên máy này (2026-11-06): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 38/38 pass (cập nhật sau session 2026-11-06 (3)+(4): Umi, cache TTL, guard xóa, gỡ history/DeployHistory).
 
 Yêu cầu thêm cho máy khác: **VS Build Tools (MSVC linker)** khi build release, **WebView2 Runtime** (Windows 10/11 có sẵn).
 
@@ -71,16 +71,14 @@ verlox/
 │   └── components/
 │       ├── Sidebar.jsx          # logo giữa + 3 tab (Home/Roblox/Logs)
 │       ├── HomeScreen.jsx       # mô tả app + link dev (opener) + "API Powered by WEAO"
-│       ├── RobloxScreen.jsx     # Binary Type + Version Hash + Chọn Executor + preview + nút tải + progress + DeployHistory/Installed/History
-│       ├── ExecutorPreview.jsx  # icon + info + badge + banner downgrade warning
+│       ├── RobloxScreen.jsx     # Binary Type + Version Hash + Chọn Executor + preview + nút tải + progress + Installed
+│       ├── ExecutorPreview.jsx  # icon + info + badge (ĐÃ CẬP NHẬT/CHƯA UPDATE/DETECTED) + banner downgrade warning
 │       ├── InstalledCard.jsx   # scan máy + row action (chạy/protocol/shortcut/folder/xóa arm) + skeleton
-│       ├── DeployHistoryCard.jsx  # nạp 30 bản + select (#history-select)
-│       ├── DownloadHistoryCard.jsx  # lịch sử + import JSON cũ
 │       ├── LogsScreen.jsx      # full-height log
 │       └── LogPanel.jsx       # panel terminal (label chèn border, scanline, block cursor)
 ├── dist/                  # build output của Vite (tauri.conf frontendDist trỏ сюда) — gitignored
 ├── src-tauri/
-│   ├── Cargo.toml         # deps: tauri 2, reqwest (rustls), zip, md-5, chrono, windows-registry...
+│   ├── Cargo.toml         # deps: tauri 2, reqwest (rustls), zip, md-5, windows-registry...
 │   ├── tauri.conf.json    # productName Verlox, frontendDist ../dist, devUrl :5173, withGlobalTauri false, csp null (bước 5 harden)
 │   ├── capabilities/default.json   # ACL Tauri 2 (core:default)
 │   ├── icons/icon.ico
@@ -89,16 +87,15 @@ verlox/
 │       ├── lib.rs        # toàn bộ #[tauri::command] + menu commands
 │       ├── hash.rs       # validate_hash — đã port + test
 │       ├── manifest.rs   # parse_manifest + PACKAGE_MAP + APP_SETTINGS_XML — đã port + test
-│       ├── versions.rs   # WEAO (current/future/past) + API chính thức + DeployHistory — đã port
+│       ├── versions.rs   # WEAO (current/future/past) + API chính thức + filter exploits + Umi — đã port
 │       ├── installed.rs  # scan Versions/, guard thư mục unsafe — đã port + test
-│       ├── history.rs    # download_history.json đọc/ghi + push — đã port + test
 │       ├── cdn.rs       # probe CDN + download resume + MD5 + progress — đã port + test (bước 2)
 │       ├── extract.rs   # giải nén zip theo PACKAGE_MAP + WebView2 installer + AppSettings.xml — đã port + test (bước 2)
 │       └── win.rs        # register/unregister protocol roblox-player:// (HKCU, marker "verlox") — đã port + test (bước 3)
 └── backup/                # DỰ ÁN PYTHON CŨ — chỉ tham khảo, KHÔNG build/edit
     ├── RobloxVersionDownloader1.2.py   # nguồn port chính (~1660 dòng, có sẵn mọi logic cần)
     ├── README.md                      # mô tả bản 1.2
-    ├── download_history.json          # dữ liệu lịch sử cũ (import bằng lệnh trong app)
+    ├── download_history.json          # dữ liệu lịch sử cũ (tính năng import vào app ĐÃ GỠ 2026-11-06)
     └── CleanerCache/CleanRobloxCache.bat
 ```
 
@@ -112,21 +109,18 @@ Bảng commands hiện có (`src-tauri/src/lib.rs`):
 
 | Command | Trạng thái | Ý nghĩa |
 |---|---|---|
-| `get_live_versions` | ✅ chạy được | WEAO current/past/future + API chính thức → `{latest, studioLatest, futureWindows, previousWindows, previousMac}` |
-| `get_history_versions` | ✅ chạy được | Quét `DeployHistory.txt` → tối đa 30 hash |
-| `list_executors` | ✅ chạy được (bước 4, 2026-11-06) | 1 request `GET weao.xyz/api/status/exploits` (UA WEAO-3PService) → lọc Windows + không hidden + `rbxversion` hợp lệ → `Vec<ExecutorInfo>` camelCase: `name, executorVersion, rbxVersion, updateStatus, detected, free, cost, keySystem`; 429 trả lỗi tiếng Việt |
-| `get_umi_executor` | ✅ chạy được (2026-11-06) | Executor **Umi** ngoài danh sách WEAO (mục 6.5): đọc 2 file raw GitHub → `ExecutorInfo` duy nhất; `updateStatus` tự so hash Umi hỗ trợ với API chính thức Roblox |
+| `get_live_versions(force)` | ✅ chạy được | WEAO current/past/future + API chính thức → `{latest, studioLatest, futureWindows, previousWindows, previousMac}`. **Cache TTL 5 phút** (lib.rs `fetch_cached`); `force=true` bỏ qua TTL; khi fetch lỗi và có cache cũ (kể cả hết hạn) → trả stale (trừ khi `force` — force muốn dữ liệu mới hoặc lỗi rõ ràng) |
+| `list_executors(force)` | ✅ chạy được (bước 4, 2026-11-06) | 1 request `GET weao.xyz/api/status/exploits` (UA WEAO-3PService) → lọc Windows + không hidden + `rbxversion` hợp lệ → `Vec<ExecutorInfo>` camelCase: `name, executorVersion, rbxVersion, updateStatus, detected, free, cost, keySystem`; 429 trả lỗi tiếng Việt. **Cache TTL 5 phút** như trên |
+| `get_umi_executor(force)` | ✅ chạy được (2026-11-06) | Executor **Umi** ngoài danh sách WEAO (mục 6.5): đọc 2 file raw GitHub → `ExecutorInfo` duy nhất; `updateStatus` tự so hash Umi hỗ trợ với API chính thức Roblox. **Cache TTL 5 phút** như trên |
 | `list_installed_versions(withSizes)` | ✅ chạy được | Scan `%LOCALAPPDATA%\Roblox\Versions` → hash, path, có Player/Studio exe, dung lượng |
 | `launch_version(hash)` | ✅ chạy được | Spawn `RobloxPlayerBeta.exe` (working dir = thư mục version) |
 | `open_folder(path)` | ✅ chạy được | Mở Explorer |
-| `delete_version(hash)` | ✅ chạy được | Xóa thư mục version (chỉ chấp nhận dir tên đúng format hash) |
+| `delete_version(hash)` | ✅ chạy được | Xóa thư mục version (chỉ chấp nhận dir tên đúng format hash). **Guard 2026-11-06**: từ chối nếu thư mục trùng target của tác vụ tải đang chạy (`DownloadState.current_dir` so khớp chính xác đường dẫn) → yêu cầu hủy tải hoặc đợi xong |
 | `clear_cache()` | ✅ chạy được | Dọn `%LOCALAPPDATA%\Roblox\Downloads`, trả về số byte giải phóng; trả lỗi nếu đang có tác vụ tải (chống xóa `.part` đang ghi) |
-| `get_download_history` | ✅ chạy được | Đọc `%LOCALAPPDATA%\Verlox\download_history.json` |
-| `import_legacy_history(filePath)` | ✅ chạy được | Merge JSON cũ (backup/download_history.json) vào history mới |
 | `create_shortcut(hash)` | ✅ chạy được | Tạo `.lnk` trên Desktop qua PowerShell COM |
 | `register_protocol(hash)` | ✅ chạy được (bước 3) | Ghi registry `HKCU\Software\Classes\roblox{,-player}` cho version theo hash: default `URL:<proto> Protocol`, `URL Protocol=""`, `shell\open\command = "<exe>" "%1"`, kèm giá trị marker `verlox=<đường dẫn exe>` |
 | `unregister_protocol()` | ✅ chạy được (bước 3) | Gỡ đăng ký protocol — chỉ xóa key nào có marker `verlox` (không đụng đăng ký gốc của Roblox chính thức); chưa đăng ký → trả lỗi tiếng Việt |
-| `start_download(hash, installDir, options)` | ✅ chạy được | Spawn task download: probe CDN → manifest → tải từng zip (cache MD5, resume `.part`, verify MD5) → giải nén theo PACKAGE_MAP → ghi AppSettings.xml → shortcut tùy chọn → `history::push`. `installDir` là thư mục gốc, version cài vào con `{hash}`. Trả lỗi `EXISTS::<dir>` khi thư mục đích đã có nội dung và `options.overwrite` chưa bật (UI hỏi người dùng rồi gọi lại với `overwrite: true`) |
+| `start_download(hash, installDir, options)` | ✅ chạy được | Spawn task download: probe CDN → manifest → tải từng zip (cache MD5, resume `.part`, verify MD5) → giải nén theo PACKAGE_MAP → ghi AppSettings.xml → shortcut tùy chọn. `installDir` là thư mục gốc, version cài vào con `{hash}`. Trả lỗi `EXISTS::<dir>` khi thư mục đích đã có nội dung và `options.overwrite` chưa bật (UI hỏi người dùng rồi gọi lại với `overwrite: true`). Task chạy dưới `RunningGuard` (Drop) — tự reset cờ `running` + xóa `current_dir` kể cả khi panic |
 | `cancel_download` | ✅ chạy được | Set cờ cancel — task dừng ở điểm kiểm tra kế tiếp, các file `.part` được giữ để resume lần sau |
 
 Event dùng thật ở bước 2 (frontend `listen` từ `@tauri-apps/api/event`, đăng ký trong `App.jsx`): `download://log` `{message, level}` (level: `info/muted/warning/success/error`), `download://progress` `{overallPct, pkgName, pkgPct, speedBps, etaSecs}`, `download://done` `{installDir}` (`null` nếu bị hủy giữa chừng), `download://error` `{title, message}`.
@@ -151,7 +145,6 @@ Event dùng thật ở bước 2 (frontend `listen` từ `@tauri-apps/api/event`
 
 - Manifest: `{cdn}/{hash}-rbxPkgManifest.txt`.
 - Package: `{cdn}/{hash}-{tên-zip}`.
-- Lịch sử deploy: `{primary}/DeployHistory.txt`.
 
 ### 5.3 Format manifest
 
@@ -193,9 +186,8 @@ Sau khi giải nén xong, ghi đè `{install_dir}/AppSettings.xml` với nội d
 |---|---|
 | Cài đặt bản chính thức | `%LOCALAPPDATA%\Roblox\Versions\<hash>\` (chứa `RobloxPlayerBeta.exe` / `RobloxStudioBeta.exe`) |
 | Cache zip đã tải | `%LOCALAPPDATA%\Roblox\Downloads\` (mỗi file `<hash>-<tên-zip>`, đang tải thì `*.part`) |
-| Lịch sử Verlox | `%LOCALAPPDATA%\Verlox\download_history.json` |
 
-Format history (tương thích bản Python): JSON array `[{ "hash", "path", "time" }]`, tối đa 20 bản ghi.
+(Lịch sử download `%LOCALAPPDATA%\Verlox\download_history.json` đã gỡ khỏi app 2026-11-06; file cũ còn trên máy người dùng là dữ liệu mồ côi, không đọc không ghi.)
 
 ### 5.7 An toàn thư mục (chống ghi đè lên hệ thống)
 
@@ -219,7 +211,7 @@ Domain: chính `weao.xyz`, `whatexpsare.online`; thay thế `whatexploitsaretra.
 | `GET /api/versions/future` | Windows/Mac **sắp tới** — mới có trong bản update, Verlox dùng cho chip "sắp tới" |
 | `GET /api/versions/past` | Windows/Mac trước đó (dùng để downgrade) |
 
-Response chứa cả `{c}Response` metadata — Verlox bỏ qua. Khi **rate limit 429** WEAO trả `{"error":"Too Many Requests","rateLimitInfo":{...}}` → deserialize fail → code tự rơi về fallback; UI không nên spam nút Làm mới (bước 4: thêm cache TTL ~5 phút).
+Response chứa cả `{c}Response` metadata — Verlox bỏ qua. Khi **rate limit 429** WEAO trả `{"error":"Too Many Requests","rateLimitInfo":{...}}` → deserialize fail → code tự rơi về fallback. Chống spam request: **cache TTL 5 phút đã triển khai 2026-11-06** (mục 4, `force` để bypass).
 
 WEAO còn có **exploit tracker** — dùng cho tính năng "Tải theo executor" (kế hoạch bước 4, mô tả đầy đủ API ở mục 6.4).
 
@@ -228,9 +220,9 @@ WEAO còn có **exploit tracker** — dùng cho tính năng "Tải theo executor
 - `https://clientsettingscdn.roblox.com/v2/client-version/WindowsPlayer` → JSON có `clientVersionUpload` (hash), `version` (số xyz).
 - `.../WindowsStudio` → tương tự cho Studio (chính là nguồn `studioLatest` — WEAO không cung cấp current cho Studio rõ ràng).
 
-### 6.3 Fallback khi WEAO past không dùng được
+### 6.3 ~~Fallback DeployHistory.txt~~ — ĐÃ BỎ (2026-11-06)
 
-`DeployHistory.txt` trên CDN — quét các token `version-*` hợp lệ, dedupe, tối đa 30. Rust: `versions::fetch_deploy_history`.
+Card "Version cũ hơn" (nạp `DeployHistory.txt` → chọn 1 trong 30 hash gần đây) đã gỡ khỏi UI và backend (`get_history_versions` + `versions::fetch_deploy_history` xóa) theo yêu cầu chủ dự án — ít dùng, vướng diện tích. Hạ cấp version giờ chỉ còn 2 đường: nút "Tải bản trước đó" (WEAO past) hoặc dán hash thủ công. Nếu sau này cần lại: port lại từ bản Python `VersionFetchWorker` (backup dòng 929-997, nguồn `https://setup.rbxcdn.com/DeployHistory.txt`).
 
 ### 6.4 WEAO exploit tracker — tính năng "Tải theo executor" (KẾ HOẠCH, bước 4)
 
@@ -248,7 +240,7 @@ Chọn executor (Potassium, Xeno, Synapse Z...) → hiển thị đúng version 
 | `title` | Tên executor (dropdown) | |
 | `version` | Version phần mềm của executor, hiển thị phụ | không nhầm với `rbxversion` |
 | `rbxversion` | **Hash Roblox mà executor hỗ trợ — cốt lõi tính năng** | chạy qua `hash::validate_hash`; rỗng/thiếu → loại entry |
-| `updateStatus` | Badge ĐÃ CẬP NHẬT / LỖI THỜI | bool |
+| `updateStatus` | Badge ĐÃ CẬP NHẬT / CHƯA UPDATE | bool |
 | `detected` | Badge cảnh báo (bị Hyperion detect) | bool |
 | `platform` | Chỉ giữ entry `"Windows"` | Verlox Windows-only |
 | `free` / `cost` / `keysystem` | Thông tin phụ (Miễn phí / giá / key system) | |
@@ -256,12 +248,12 @@ Chọn executor (Potassium, Xeno, Synapse Z...) → hiển thị đúng version 
 | `hidden` | `true` → loại khỏi danh sách | |
 | `_id`, `roleId`, `index`, `extype`, `beta`... | Bỏ | field nội bộ của WEAO |
 
-**Query policy**: cache TTL 5 phút dùng chung cơ chế với cache `get_live_versions` (mục 6.1, làm ở bước 4); khi WEAO trả 429 thì deserialize fail → trả lỗi tiếng Việt, UI không spam nút Làm mới.
+**Query policy**: **ĐÃ TRIỂN KHAI 2026-11-06** — `list_executors`/`get_umi_executor`/`get_live_versions` đều qua cache TTL 5 phút thống nhất (lib.rs `fetch_cached`, có test); nút Làm mới executor gọi với `force: true` (bỏ TTL), auto nạp khi vào tab dùng cache → vào lại tab trong 5 phút không tốn request WEAO. Fetch lỗi: fallback stale từ cache cũ (trừ `force` — force muốn mới hoặc lỗi rõ).
 
 **Thiết kế khi triển khai** — ĐÃ TRIỂN KHAI 2026-11-06 (bước 4):
 
 - Command `list_executors()` ✅ → `Vec<ExecutorInfo>` camelCase đúng thiết kế; filter thuần `versions::filter_exploits` có test (3 case: lọc platform/hidden/hash, map cost/keysystem, parse payload thật).
-- UI ✅: tab Roblox — select "Chọn Executor" (auto nạp khi vào tab + nút refresh), preview icon (map tên executor → `assets/`, alias `Synapse Z→synz`, prefix fallback, thiếu → icon Bot) + hash hỗ trợ + badge (ĐÃ CẬP NHẬT / CHƯA UPDATE / DETECTED) + chip giá/key; chọn executor → 3 nút tải thay bằng 1 nút "Tải bản [Tên] hỗ trợ" tải đúng `rbxVersion` (reuse luồng EXISTS/progress); `updateStatus=false` → banner cảnh báo downgrade (nội dung cố định theo yêu cầu chủ dự án). `keySystem: null` (không biết, vd Umi) → không hiển thị chip key; `free=false` + `cost=null` → không hiển thị chip giá.
+- UI ✅: tab Roblox — select "Chọn Executor" (auto nạp khi vào tab + nút refresh), preview icon (map tên executor → `assets/`, alias `Synapse Z→synz`, prefix fallback, thiếu → icon Bot) + hash hỗ trợ + badge (ĐÃ CẬP NHẬT / CHƯA UPDATE / DETECTED) + chip giá/key; chọn executor → 3 nút tải thay bằng 1 nút "Tải bản [Tên] hỗ trợ" tải đúng `rbxVersion` (reuse luồng EXISTS/progress); `updateStatus=false` → banner cảnh báo downgrade (nội dung cố định theo yêu cầu chủ dự án). WEAO: `keySystem` bool → chip "Key system"/"Không cần key"; `keySystem: null` (nguồn không ghi) → không hiển thị chip key; `free=false` + `cost=null` → không hiển thị chip giá.
 
 ### 6.5 Executor ngoài WEAO — Umi (ĐÃ TRIỂN KHAI 2026-11-06)
 
@@ -272,7 +264,7 @@ Umi không nằm trong danh sách API của WEAO — nguồn riêng trên GitHub
 | `NguoiGiaAnThitTreCon/umi/.../umi.txt` | Version phần mềm của Umi (hiển thị `v...` ở preview) |
 | `NguoiGiaAnThitTreCon/umi/.../version.txt` | **Hash Roblox mà Umi hỗ trợ** — chạy qua `hash::validate_hash` |
 
-- Command `get_umi_executor()` ✅ (đường dẫn const ở `versions.rs`): đọc 2 file raw → `umi_executor_from_texts` (hàm thuần, có test) → `ExecutorInfo{ name: "Umi", keySystem: null, free: false, cost: null }` — không claim giá/key vì nguồn không cung cấp.
+- Command `get_umi_executor()` ✅ (đường dẫn const ở `versions.rs`): đọc 2 file raw → `umi_executor_from_texts` (hàm thuần, có test) → `ExecutorInfo{ name: "Umi", free: true, cost: null, keySystem: false }` — **Miễn phí + Không cần key** (xác nhận chủ dự án 2026-11-06), preview hiển thị 2 chip tương ứng.
 - `updateStatus` của Umi **không dùng badge tĩnh**: backend tự so hash Umi hỗ trợ với `clientsettingscdn` (WindowsPlayer) từng lần nạp → hash khớp latest = ĐÃ CẬP NHẬT, khác = CHƯA UPDATE (kèm banner downgrade); API chính thức fail → mặc định đã cập nhật (tránh cảnh báo nhầm).
 - Frontend (`App.jsx::loadExecutors`) nạp WEAO + Umi song song bằng `Promise.allSettled`: nguồn nào fail vẫn giữ nguồn kia (log lỗi từng nguồn), cả hai fail → pill lỗi; guard trùng tên — nếu WEAO sau này có executor "Umi" thì record WEAO thắng.
 - Icon: `assets/umi.webp` — map tự động qua `executorIcons.js` (norm "umi" trùng tên file).
@@ -287,7 +279,7 @@ Port `InstallWorker` (backup/RobloxVersionDownloader1.2.py dòng ~296-612) thàn
 2. ~~`fetch_manifest(cdn, hash)`~~ ✅ → `manifest::parse_manifest` (đã có).
 3. Vòng lặp từng zip ✅: check cache (`<hash>-<zip>` MD5 bằng crate `md-5`) → nếu miss thì stream bằng `reqwest` `bytes_stream` vào `<zip>.part`, **resume bằng header `Range: bytes=N-`** (lỗi 416 → xóa .part tải lại từ đầu; server trả 200 thay vì 206 → cũng reset về đầu), emit `download://progress` mỗi ~0.4s; verify MD5 xong mới rename `.part` → đích.
 4. `extract.rs` ✅: crate `zip` giải nén theo `PACKAGE_MAP` (zip lạ → giải nén vào gốc, như bản Python), `WebView2RuntimeInstaller.zip` → chạy exe `/silent /install` timeout 120s (tắt option thì bỏ qua), ghi `AppSettings.xml`.
-5. `start_download` ✅: thay stub bằng `tauri::async_runtime::spawn` + `install_task`/`install_inner` trong `lib.rs`; state `DownloadState { cancel: Arc<AtomicBool>, running: Arc<AtomicBool> }` qua `.manage()`, cờ `running` do `RunningGuard` (Drop) tự reset khi task xong hoặc panic; xong gọi `history::push`; ghi đè thư mục tồn tại: backend trả `EXISTS::<dir>`, UI confirm rồi gọi lại với `options.overwrite = true` (option `registerProtocol` giờ gọi `win.rs::register_protocol` — bước 3 đã hoàn tất).
+5. `start_download` ✅: thay stub bằng `tauri::async_runtime::spawn` + `install_task`/`install_inner` trong `lib.rs`; state `DownloadState { cancel: Arc<AtomicBool>, running: Arc<AtomicBool>, current_dir: Arc<Mutex<Option<PathBuf>>> }` qua `.manage()`, cờ `running` + `current_dir` do `RunningGuard` (Drop) tự reset khi task xong hoặc panic; ghi đè thư mục tồn tại: backend trả `EXISTS::<dir>`, UI confirm rồi gọi lại với `options.overwrite = true` (option `registerProtocol` giờ gọi `win.rs::register_protocol` — bước 3 đã hoàn tất).
 6. Frontend ✅: `listen("download://progress")` vẽ 2 progress bar (overall + per-pkg) + speed/ETA + nút Hủy tải, card "Tiến trình tải" trong `index.html`.
 
 Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + zero-copy; song song nhiều zip chỉ làm khi đã ổn.
@@ -303,13 +295,13 @@ Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + ze
 ### Bước 4 — UI hoàn thiện + query policy
 
 - **UI rewrite 2026-11-06 HOÀN TẤT**: frontend chuyển sang React 19 + Vite 8 theo New_UI.md (khung hướng A Launchpad + mật độ hàng của B + panel log chất liệu terminal của D), icon lucide-react, motion tokens + skeleton + progress `scaleX` + sheen + arm-delete + full ID contract. Lệnh `npm run dev` / `npm run build` giữ nguyên.
-- **Sidebar 20/80 2026-11-06 HOÀN TẤT**: layout mới — sidebar trái 20% (logo VERLOX giữa, block cursor) + 3 tab: **Home** (mô tả app, link Discord/YouTube/repo — mở qua `tauri-plugin-opener`, "API Powered by WEAO"), **Roblox** (Binary Type [Player/Studio] + Version Hash optional + Chọn Executor + 3 nút latest/previous/specified hoặc 1 nút executor, options, progress, DeployHistory, installed, history), **Logs** (toàn bộ log full-height). Bỏ live-dot nhấp nháy + watermark "by HoangLong". `REPO_URL` để trống trong `src/lib/links.js` — điền khi biết URL.
-- Executor feature ✅ (xem mục 6.4 + bảng commands); nút Previous chỉ bật cho Player (WEAO không có past Studio), nút trong hero disabled khi thiếu dữ liệu.
+- **Sidebar 20/80 2026-11-06 HOÀN TẤT**: layout mới — sidebar trái 20% (logo VERLOX giữa, block cursor) + 3 tab: **Home** (mô tả app, link Discord/YouTube/repo — mở qua `tauri-plugin-opener`, "API Powered by WEAO"), **Roblox** (Binary Type [Player/Studio] + Version Hash optional + Chọn Executor + 3 nút latest/previous/specified hoặc 1 nút executor, options, progress, installed), **Logs** (toàn bộ log full-height). Bỏ live-dot nhấp nháy + watermark "by HoangLong". `REPO_URL` đã điền trong `src/lib/links.js`.
+- Executor feature ✅ (xem mục 6.4 + bảng commands); nút Previous chỉ bật cho Player (WEAO không có past Studio), nút trong hero disabled khi thiếu dữ liệu; nút "Tải bản mới nhất" dùng `liveBusy` — disable + title "Đang nạp..." khi live đang tải và chưa có `latest` (2026-11-06 (4)).
 - Options panel ✅ (protocol / webview2 / shortcut); nút Shortcut từng row dùng lại command `create_shortcut`.
-- Browse thư mục qua `tauri-plugin-dialog` (thêm dep + permission) — còn lại dùng `window.prompt/confirm`; link ngoài dùng `tauri-plugin-opener` (đã thêm dep + `opener:default` capability).
+- Browse thư mục cài đặt: **cần thêm `tauri-plugin-dialog`** (dep + permission) — ở root hiện đang dùng `window.prompt/confirm` làm thay; link ngoài dùng `tauri-plugin-opener` (đã thêm dep + `opener:default` capability).
 - So sánh live vs installed → badge trên từng row — chưa làm.
-- Cache TTL 5 phút cho `get_live_versions` + `list_executors`, chống 429 WEAO — chưa làm (hiện chỉ auto nạp 1 lần + nút refresh thủ công).
-- Import legacy history bằng file picker thay `window.prompt` — chưa làm.
+- **Cache TTL 5 phút CHO `get_live_versions` + `list_executors` + `get_umi_executor` — ĐÃ LÀM 2026-11-06 (4)**: `fetch_cached` trong lib.rs (TTL 300s, stale-on-error cho lệnh ngầm, `force` bypass — nút Làm mới executor dùng `force`), có test riêng.
+- **GỠ card DeployHistory + Lịch sử download — 2026-11-06 (4)** theo yêu cầu chủ dự án (ít dùng, vướng diện tích): xóa 2 component + props/state/callback liên quan trong App.jsx, xóa 3 command (`get_history_versions`/`get_download_history`/`import_legacy_history`), xóa module `history.rs` + `versions::fetch_deploy_history` + dep `chrono`; card "Trên máy" giờ full-width. Chi tiết ở mục 6.3 + 5.6. Import legacy history bằng file picker cũng gỡ luôn theo tính năng (đã không còn UI).
 
 ### Bước 5 — Build & phân phối
 
@@ -325,19 +317,19 @@ Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + ze
 | `parse_manifest` (dòng 270) | `manifest.rs::parse_manifest` |
 | `PACKAGE_MAP`, `APP_SETTINGS_XML` (dòng 55-86) | `manifest.rs` |
 | `VersionFetchWorker` (dòng 929-997) | `versions.rs` (+ thêm endpoint future) |
-| `load_history/save_history` (dòng 157-173) | `history.rs` (dùng `%LOCALAPPDATA%\Verlox`) |
+| `load_history/save_history` (dòng 157-173) | **ĐÃ BỎ** (gỡ tính năng lịch sử 2026-11-06, module `history.rs` xóa) |
 | `is_unsafe_dir` (dòng 141-155) | `installed.rs::is_unsafe_dir` |
 | `InstallWorker._main/_pick_cdn/_download_pkg/_extract` (dòng 296-586) | `cdn.rs` (probe/fetch/download_pkg) + `extract.rs` + `install_task`/`install_inner` (`lib.rs`) — đã port bước 2; `create_shortcut` option dùng lại `make_shortcut` của lệnh `create_shortcut` |
 | `create_desktop_shortcut` (dòng 184) | `create_shortcut` command (PowerShell COM) |
 | `_register_protocol` (dòng 588) | `win.rs::register_protocol` — đã port (bước 3) |
-| `HistoryRow` + UI PySide6 | `src/App.jsx` + `components/` + `styles.css` (React-Vite từ 2026-11-06) |
+| `HistoryRow` + UI PySide6 | **ĐÃ BỎ** (gỡ card lịch sử + DeployHistory 2026-11-06 theo yêu cầu chủ dự án) |
 | `PALETTE` (dòng 88) | `:root` CSS variables trong `styles.css` |
 | `MusicPlayer` (pygame, dòng 216) | **ĐÃ BỎ** — không port (nếu muốn: `<audio>` trong webview, bước 4) |
 | `main()`, PyInstaller (`lenhbuild.txt`) | `tauri build` tự lo |
 
 ## 9. Quy ước code
 
-- Rust: `rustfmt` mặc định; hàm trả `Result<T, String>` với message tiếng Việt hiển thị trực tiếp lên UI; logic thuần (`hash`, `manifest`, `installed`, `history`) phải có `#[cfg(test)]`.
+- Rust: `rustfmt` mặc định; hàm trả `Result<T, String>` với message tiếng Việt hiển thị trực tiếp lên UI; logic thuần (`hash`, `manifest`, `installed`, `cdn` open_part, `extract` sanitize, `win`, `fetch_cached`, `filter_exploits`, `umi_executor_from_texts`, `RunningGuard`) phải có `#[cfg(test)]`.
 - Frontend (từ 2026-11-06): React 19 + Vite 8, component function JSX trong `src/components/`; state tập trung trong `App.jsx` (useCallback/hooks), không thêm state library; IPC qua `src/lib/tauri.js` (`@tauri-apps/api` — `withGlobalTauri` đã tắt); giữ nguyên tập ID DOM cũ (mục 7 New_UI.md) khi sửa component.
 - Icon chỉ dùng `lucide-react` (inline SVG khi bundle, offline). Vô hiệu mọi hiệu ứng qua `prefers-reduced-motion` (đã có trong `styles.css`).
 - Serde struct nào expose về JS phải `#[serde(rename_all = "camelCase")]`.
@@ -354,4 +346,5 @@ Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + ze
 - 2026-11-06: commit bước 4 (UI rewrite React + executor pill). Phát hiện + vá lỗi `download_pkg` mở `.part` thiếu `write(true)` ở nhánh tải mới — Windows std từ chối "creating or truncating a file requires write or append access", khiến **mọi** lần tải mới fail từ bước 2 (đường chạy thật không có test). Đã tách helper `cdn::open_part` + test hồi quy cho cả nhánh fresh lẫn resume.
 - 2026-11-06 (2): lỗi giải nén `content-*.zip` — zip của Roblox đóng gói kiểu Windows cũ: entry dùng `\` làm separator và có entry gốc tên chỉ là `\`; `zip::ZipArchive::extract()` từ chối với "invalid Zip archive: Invalid file path" (Python `extractall` thì sanitize nên bản 1.2 chạy được). Đã thay bằng vòng giải nén tự viết trong `extract::extract_zip` + `sanitize_entry_name` đúng ngữ nghĩa `zipfile.extractall` (bỏ `''`/`.`/`..`, strip drive + leading slash, bỏ qua entry rác, NUL → skip) — an toàn zip-slip vì mọi path đều nằm trong out_dir; test hồi quy tái tạo zip kiểu Roblox + đã verify trực tiếp với file `content-avatar.zip` thật trong cache (73 file).
 - `API_Docs.txt` ở root là tài liệu WEAO gốc bản update 2026-11 — đối chiếu trước khi thêm field mới của WEAO.
-- 2026-11-06 (3): thêm executor **Umi** ngoài WEAO (command `get_umi_executor`, mục 6.5) + badge DETECTED trong preview (trước đó docs ghi nhưng code thiếu). Vá hiệu ứng progress: `.progress-fill` transition 120ms trong khi backend emit `download://progress` chu kỳ 0.4s → bar chạy nửa chừng đứng im (giật); sửa thành `400ms linear` khớp nhịp emit → chuyển động liên tục; keyframe `sheen` thiếu `from` nên dải sáng nhảy pop giữa bar mỗi vòng loop — thêm `from: translateX(-100%)`. `ExecutorInfo.keySystem` đổi từ `bool` sang `Option<bool>` (null = không biết, không hiển thị chip).
+- 2026-11-06 (3): thêm executor **Umi** ngoài WEAO (command `get_umi_executor`, mục 6.5) + badge DETECTED trong preview (trước đó docs ghi nhưng code thiếu). Vá hiệu ứng progress: `.progress-fill` transition 120ms trong khi backend emit `download://progress` chu kỳ 0.4s → bar chạy nửa chừng đứng im (giật); sửa thành `400ms linear` khớp nhịp emit → chuyển động liên tục; keyframe `sheen` thiếu `from` nên dải sáng nhảy pop giữa bar mỗi vòng loop — thêm `from: translateX(-100%)`. `ExecutorInfo.keySystem` đổi từ `bool` sang `Option<bool>` (null = không biết, không hiển thị chip). Commit `47481f4`.
+- 2026-11-06 (4): (a) guard `delete_version` — từ chối xóa đúng thư mục đang là target của tác vụ tải (`DownloadState.current_dir`, set khi task spawn, clear bởi `RunningGuard::drop` kể cả panic, có test); (b) nút "Tải bản mới nhất" wire `liveBusy` (disable + title khi đang nạp và chưa có `latest`); (c) cache TTL 5 phút `fetch_cached` cho `get_live_versions`/`list_executors`/`get_umi_executor` (tham số `force` bypass — nút Làm mới executor; stale-on-error cho lệnh ngầm, không stale khi force, có 4 test); (d) Umi hiển thị **Miễn phí + Không cần key** (`free: true`, `keySystem: Some(false)` — xác nhận chủ dự án); (e) gỡ card DeployHistory + Lịch sử download (UI + props + 3 command + `history.rs` + `fetch_deploy_history` + dep `chrono`), card "Trên máy" full-width. `cargo test` 38/38, `cargo check` 0 warning, `vite build` pass. Chưa commit — đợi yêu cầu.

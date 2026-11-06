@@ -4,9 +4,7 @@ import { fmtEta, fmtSpeed } from "../lib/utils.js";
 import { normalizeHash } from "../lib/hash.js";
 import { executorIcon } from "../lib/executorIcons.js";
 import ExecutorPreview from "./ExecutorPreview.jsx";
-import DeployHistoryCard from "./DeployHistoryCard.jsx";
 import InstalledCard from "./InstalledCard.jsx";
-import DownloadHistoryCard from "./DownloadHistoryCard.jsx";
 
 function ProgressBarBlock({ dlHash, dlBusy, dlDone, cancelReq, progress, onCancelDownload }) {
   const dlState = dlDone ? "done" : dlBusy ? "busy" : "idle";
@@ -95,9 +93,6 @@ export default function RobloxScreen({
   onOptionChange,
   onDownloadHash,
   onCancelDownload,
-  deployVersions,
-  onLoadDeploy,
-  onPickDeploy,
   installed,
   onRefreshInstalled,
   onUnregisterProtocol,
@@ -107,9 +102,6 @@ export default function RobloxScreen({
   onShortcut,
   onOpen,
   onDeleteVersion,
-  history,
-  onImportHistory,
-  onFillHash,
 }) {
   const [binaryType, setBinaryType] = useState("player");
   const [executorName, setExecutorName] = useState("");
@@ -198,8 +190,8 @@ export default function RobloxScreen({
             </div>
             <button
               className="btn small icon"
-              title="Nạp lại danh sách executor (WEAO + Umi)"
-              onClick={onLoadExecutors}
+              title="Nạp lại danh sách executor (WEAO + Umi) — bỏ qua cache"
+              onClick={() => onLoadExecutors(true)}
               disabled={executorsLoading}
             >
               <RefreshCw className={executorsLoading ? "ic spin" : "ic"} />
@@ -227,9 +219,14 @@ export default function RobloxScreen({
               className="btn cta"
               onClick={() => {
                 if (latestHash) onDownloadHash(latestHash);
-                else onRefreshLive();
+                else if (!liveBusy) onRefreshLive();
               }}
-              disabled={dlBusy}
+              disabled={dlBusy || (liveBusy && !latestHash)}
+              title={
+                liveBusy && !latestHash
+                  ? "Đang nạp dữ liệu phiên bản trực tiếp..."
+                  : undefined
+              }
             >
               <Download className="ic" />
               Tải bản mới nhất
@@ -303,23 +300,17 @@ export default function RobloxScreen({
         />
       </section>
 
-      <div className="cols">
-        <InstalledCard
-          data={installed}
-          onRefresh={onRefreshInstalled}
-          onUnregisterProtocol={onUnregisterProtocol}
-          onClearCache={onClearCache}
-          onRun={onRunVersion}
-          onProtocol={onProtocol}
-          onShortcut={onShortcut}
-          onOpen={onOpen}
-          onDelete={onDeleteVersion}
-        />
-        <div className="col-right">
-          <DeployHistoryCard versions={deployVersions} onLoad={onLoadDeploy} onPick={onPickDeploy} />
-          <DownloadHistoryCard entries={history} onImport={onImportHistory} onFill={onFillHash} onOpen={onOpen} />
-        </div>
-      </div>
+      <InstalledCard
+        data={installed}
+        onRefresh={onRefreshInstalled}
+        onUnregisterProtocol={onUnregisterProtocol}
+        onClearCache={onClearCache}
+        onRun={onRunVersion}
+        onProtocol={onProtocol}
+        onShortcut={onShortcut}
+        onOpen={onOpen}
+        onDelete={onDeleteVersion}
+      />
     </div>
   );
 }
