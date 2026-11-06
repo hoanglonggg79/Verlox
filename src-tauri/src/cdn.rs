@@ -92,7 +92,7 @@ pub async fn probe_cdns(client: &reqwest::Client, vh: &str) -> &'static str {
                 .send()
                 .await
             {
-                Ok(r) => matches!(r.status().as_u16(), 200 | 403 | 404),
+                Ok(r) => r.status() == reqwest::StatusCode::OK,
                 Err(_) => false,
             };
             let dt = if ok {

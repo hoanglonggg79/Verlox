@@ -6,13 +6,15 @@ mod installed;
 mod manifest;
 mod versions;
 
-use installed::{downloads_root, is_unsafe_dir, versions_root, InstalledVersion};
+use installed::{
+    clear_dir_contents, downloads_root, is_unsafe_dir, versions_root, InstalledVersion,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 const ERR_PROTOCOL_STEP3: &str =
     "Dang ky protocol roblox-player:// thuoc buoc 3 cua lo trinh - xem docs.md muc 7";
@@ -132,22 +134,7 @@ fn clear_cache(state: tauri::State<'_, DownloadState>) -> Result<u64, String> {
                 .to_string(),
         );
     }
-    let dir = installed::downloads_root();
-    let mut removed = 0u64;
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(e) => e,
-        Err(_) => return Ok(0),
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            std::fs::remove_dir_all(&p).map_err(|e| e.to_string())?;
-        } else {
-            std::fs::remove_file(&p).map_err(|e| e.to_string())?;
-        }
-        removed += entry.metadata().map(|m| m.len()).unwrap_or(0);
-    }
-    Ok(removed)
+    clear_dir_contents(&downloads_root())
 }
 
 #[derive(Deserialize, Default)]
@@ -166,7 +153,15 @@ struct DownloadOptions {
 #[derive(Default)]
 pub struct DownloadState {
     cancel: Arc<AtomicBool>,
-    running: AtomicBool,
+    running: Arc<AtomicBool>,
+}
+
+struct RunningGuard(Arc<AtomicBool>);
+
+impl Drop for RunningGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 fn dir_non_empty(p: &Path) -> bool {
@@ -258,7 +253,9 @@ async fn start_download(
     }
     state.cancel.store(false, Ordering::SeqCst);
     let cancel = state.cancel.clone();
+    let running = state.running.clone();
     tauri::async_runtime::spawn(async move {
+        let _guard = RunningGuard(running);
         install_task(app, client, vh, dir, opts, cancel).await;
     });
     Ok(())
@@ -302,9 +299,6 @@ async fn install_task(
             );
         }
     }
-    app.state::<DownloadState>()
-        .running
-        .store(false, Ordering::SeqCst);
 }
 
 async fn install_inner(
@@ -518,4 +512,30 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Verlox gap loi khi khoi chay");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn running_guard_resets_on_drop() {
+        let flag = Arc::new(AtomicBool::new(true));
+        {
+            let _guard = RunningGuard(flag.clone());
+            assert!(flag.load(Ordering::SeqCst));
+        }
+        assert!(!flag.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn running_guard_resets_on_panic() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = RunningGuard(flag.clone());
+            panic!("download task panic");
+        }));
+        assert!(result.is_err());
+        assert!(!flag.load(Ordering::SeqCst));
+    }
 }

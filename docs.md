@@ -1,6 +1,6 @@
 # VERLOX — Roblox Version Launcher
 
-> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 2** (scaffold + port logic thuần + engine download + UI progress), cập nhật 2026-11-05.
+> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 2** (scaffold + port logic thuần + engine download + UI progress), cập nhật 2026-11-05, vá 3 lỗi logic ngày 2026-11-06.
 
 ---
 
@@ -25,7 +25,7 @@ Tiền thân: **Roblox Version Downloader 1.2** (Python + PySide6) — toàn b�
 | HTML/CSS/JS thuần (không framework, không bundler) | Frontend trong `src/`, dùng `window.__TAURI__` (withGlobalTauri) |
 | Node.js + npm | Cần cho `@tauri-apps/cli` (chạy `tauri dev` / `tauri build`) |
 
-Môi trường đã verify trên máy này (2026-11-05): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 19/19 pass (sau bước 2), 455 crates đã lock trong `src-tauri/Cargo.lock`.
+Môi trường đã verify trên máy này (2026-11-05): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 23/23 pass (sau bước 2 + vá lỗi logic 2026-11-06), 455 crates đã lock trong `src-tauri/Cargo.lock`.
 
 Yêu cầu thêm cho máy khác: **VS Build Tools (MSVC linker)** khi build release, **WebView2 Runtime** (Windows 10/11 có sẵn).
 
@@ -210,7 +210,7 @@ Port `InstallWorker` (backup/RobloxVersionDownloader1.2.py dòng ~296-612) thàn
 2. ~~`fetch_manifest(cdn, hash)`~~ ✅ → `manifest::parse_manifest` (đã có).
 3. Vòng lặp từng zip ✅: check cache (`<hash>-<zip>` MD5 bằng crate `md-5`) → nếu miss thì stream bằng `reqwest` `bytes_stream` vào `<zip>.part`, **resume bằng header `Range: bytes=N-`** (lỗi 416 → xóa .part tải lại từ đầu; server trả 200 thay vì 206 → cũng reset về đầu), emit `download://progress` mỗi ~0.4s; verify MD5 xong mới rename `.part` → đích.
 4. `extract.rs` ✅: crate `zip` giải nén theo `PACKAGE_MAP` (zip lạ → giải nén vào gốc, như bản Python), `WebView2RuntimeInstaller.zip` → chạy exe `/silent /install` timeout 120s (tắt option thì bỏ qua), ghi `AppSettings.xml`.
-5. `start_download` ✅: thay stub bằng `tauri::async_runtime::spawn` + `install_task`/`install_inner` trong `lib.rs`; state `DownloadState { cancel: Arc<AtomicBool>, running: AtomicBool }` qua `.manage()`; xong gọi `history::push`; ghi đè thư mục tồn tại: backend trả `EXISTS::<dir>`, UI confirm rồi gọi lại với `options.overwrite = true` (option `registerProtocol` tạm chỉ log cảnh báo — chờ bước 3).
+5. `start_download` ✅: thay stub bằng `tauri::async_runtime::spawn` + `install_task`/`install_inner` trong `lib.rs`; state `DownloadState { cancel: Arc<AtomicBool>, running: Arc<AtomicBool> }` qua `.manage()`, cờ `running` do `RunningGuard` (Drop) tự reset khi task xong hoặc panic; xong gọi `history::push`; ghi đè thư mục tồn tại: backend trả `EXISTS::<dir>`, UI confirm rồi gọi lại với `options.overwrite = true` (option `registerProtocol` tạm chỉ log cảnh báo — chờ bước 3).
 6. Frontend ✅: `listen("download://progress")` vẽ 2 progress bar (overall + per-pkg) + speed/ETA + nút Hủy tải, card "Tiến trình tải" trong `index.html`.
 
 Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + zero-copy; song song nhiều zip chỉ làm khi đã ổn.
@@ -267,5 +267,5 @@ Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + ze
 ## 10. Ghi chú vận hành
 
 - Đổi tên repo `RobloxVersionDownloader` → `verlox`: chỉ đổi tên thư mục, không ảnh hưởng gì (`identifier` Tauri đã là `com.hoanglong.verlox`).
-- Chưa khởi tạo git — nên `git init` + commit scaffold này làm baseline trước khi bắt tay bước 2 (`.gitignore` đã có sẵn).
+- Git đã khởi tạo ngày 2026-11-06 (nhánh `main`): baseline commit chụp trạng thái "sau bước 2", sau đó commit vá 3 lỗi logic (clear_cache đếm size trước khi xóa / probe CDN chỉ chấp nhận HTTP 200 / RunningGuard reset cờ khi panic). Quy ước: commit sau mỗi tính năng hoàn chỉnh và ổn định.
 - `API_Docs.txt` ở root là tài liệu WEAO gốc bản update 2026-11 — đối chiếu trước khi thêm field mới của WEAO.
