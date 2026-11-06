@@ -848,7 +848,7 @@ h2 {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   transform: scaleX(var(--pct, 0));
   transform-origin: left;
-  transition: transform 120ms linear;
+  transition: transform 400ms linear;
   will-change: transform;
 }
 
@@ -1277,6 +1277,10 @@ h2 {
 }
 
 @keyframes sheen {
+  from {
+    transform: translateX(-100%);
+  }
+
   to {
     transform: translateX(100%);
   }

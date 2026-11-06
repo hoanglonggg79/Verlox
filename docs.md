@@ -1,6 +1,6 @@
 # VERLOX — Roblox Version Launcher
 
-> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 3 + rewrite UI React-Vite** (scaffold + port logic thuần + engine download + UI progress + Windows protocol + UI mới theo New_UI.md), cập nhật 2026-11-06.
+> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 3 + rewrite UI React-Vite + executor (WEAO + Umi ngoài API)**, cập nhật 2026-11-06.
 
 ---
 
@@ -115,6 +115,7 @@ Bảng commands hiện có (`src-tauri/src/lib.rs`):
 | `get_live_versions` | ✅ chạy được | WEAO current/past/future + API chính thức → `{latest, studioLatest, futureWindows, previousWindows, previousMac}` |
 | `get_history_versions` | ✅ chạy được | Quét `DeployHistory.txt` → tối đa 30 hash |
 | `list_executors` | ✅ chạy được (bước 4, 2026-11-06) | 1 request `GET weao.xyz/api/status/exploits` (UA WEAO-3PService) → lọc Windows + không hidden + `rbxversion` hợp lệ → `Vec<ExecutorInfo>` camelCase: `name, executorVersion, rbxVersion, updateStatus, detected, free, cost, keySystem`; 429 trả lỗi tiếng Việt |
+| `get_umi_executor` | ✅ chạy được (2026-11-06) | Executor **Umi** ngoài danh sách WEAO (mục 6.5): đọc 2 file raw GitHub → `ExecutorInfo` duy nhất; `updateStatus` tự so hash Umi hỗ trợ với API chính thức Roblox |
 | `list_installed_versions(withSizes)` | ✅ chạy được | Scan `%LOCALAPPDATA%\Roblox\Versions` → hash, path, có Player/Studio exe, dung lượng |
 | `launch_version(hash)` | ✅ chạy được | Spawn `RobloxPlayerBeta.exe` (working dir = thư mục version) |
 | `open_folder(path)` | ✅ chạy được | Mở Explorer |
@@ -260,7 +261,21 @@ Chọn executor (Potassium, Xeno, Synapse Z...) → hiển thị đúng version 
 **Thiết kế khi triển khai** — ĐÃ TRIỂN KHAI 2026-11-06 (bước 4):
 
 - Command `list_executors()` ✅ → `Vec<ExecutorInfo>` camelCase đúng thiết kế; filter thuần `versions::filter_exploits` có test (3 case: lọc platform/hidden/hash, map cost/keysystem, parse payload thật).
-- UI ✅: tab Roblox — select "Chọn Executor" (auto nạp khi vào tab + nút refresh), preview icon (map tên executor → `assets/`, alias `Synapse Z→synz`, prefix fallback, thiếu → icon Bot) + hash hỗ trợ + badge (ĐÃ CẬP NHẬT / LỖI THỜI / DETECTED) + chip giá/key; chọn executor → 3 nút tải thay bằng 1 nút "Tải bản [Tên] hỗ trợ" tải đúng `rbxVersion` (reuse luồng EXISTS/progress); `updateStatus=false` → banner cảnh báo downgrade (nội dung cố định theo yêu cầu chủ dự án).
+- UI ✅: tab Roblox — select "Chọn Executor" (auto nạp khi vào tab + nút refresh), preview icon (map tên executor → `assets/`, alias `Synapse Z→synz`, prefix fallback, thiếu → icon Bot) + hash hỗ trợ + badge (ĐÃ CẬP NHẬT / CHƯA UPDATE / DETECTED) + chip giá/key; chọn executor → 3 nút tải thay bằng 1 nút "Tải bản [Tên] hỗ trợ" tải đúng `rbxVersion` (reuse luồng EXISTS/progress); `updateStatus=false` → banner cảnh báo downgrade (nội dung cố định theo yêu cầu chủ dự án). `keySystem: null` (không biết, vd Umi) → không hiển thị chip key; `free=false` + `cost=null` → không hiển thị chip giá.
+
+### 6.5 Executor ngoài WEAO — Umi (ĐÃ TRIỂN KHAI 2026-11-06)
+
+Umi không nằm trong danh sách API của WEAO — nguồn riêng trên GitHub raw:
+
+| File raw | Dữ liệu |
+|---|---|
+| `NguoiGiaAnThitTreCon/umi/.../umi.txt` | Version phần mềm của Umi (hiển thị `v...` ở preview) |
+| `NguoiGiaAnThitTreCon/umi/.../version.txt` | **Hash Roblox mà Umi hỗ trợ** — chạy qua `hash::validate_hash` |
+
+- Command `get_umi_executor()` ✅ (đường dẫn const ở `versions.rs`): đọc 2 file raw → `umi_executor_from_texts` (hàm thuần, có test) → `ExecutorInfo{ name: "Umi", keySystem: null, free: false, cost: null }` — không claim giá/key vì nguồn không cung cấp.
+- `updateStatus` của Umi **không dùng badge tĩnh**: backend tự so hash Umi hỗ trợ với `clientsettingscdn` (WindowsPlayer) từng lần nạp → hash khớp latest = ĐÃ CẬP NHẬT, khác = CHƯA UPDATE (kèm banner downgrade); API chính thức fail → mặc định đã cập nhật (tránh cảnh báo nhầm).
+- Frontend (`App.jsx::loadExecutors`) nạp WEAO + Umi song song bằng `Promise.allSettled`: nguồn nào fail vẫn giữ nguồn kia (log lỗi từng nguồn), cả hai fail → pill lỗi; guard trùng tên — nếu WEAO sau này có executor "Umi" thì record WEAO thắng.
+- Icon: `assets/umi.webp` — map tự động qua `executorIcons.js` (norm "umi" trùng tên file).
 
 ## 7. Lộ trình chi tiết
 
@@ -339,3 +354,4 @@ Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + ze
 - 2026-11-06: commit bước 4 (UI rewrite React + executor pill). Phát hiện + vá lỗi `download_pkg` mở `.part` thiếu `write(true)` ở nhánh tải mới — Windows std từ chối "creating or truncating a file requires write or append access", khiến **mọi** lần tải mới fail từ bước 2 (đường chạy thật không có test). Đã tách helper `cdn::open_part` + test hồi quy cho cả nhánh fresh lẫn resume.
 - 2026-11-06 (2): lỗi giải nén `content-*.zip` — zip của Roblox đóng gói kiểu Windows cũ: entry dùng `\` làm separator và có entry gốc tên chỉ là `\`; `zip::ZipArchive::extract()` từ chối với "invalid Zip archive: Invalid file path" (Python `extractall` thì sanitize nên bản 1.2 chạy được). Đã thay bằng vòng giải nén tự viết trong `extract::extract_zip` + `sanitize_entry_name` đúng ngữ nghĩa `zipfile.extractall` (bỏ `''`/`.`/`..`, strip drive + leading slash, bỏ qua entry rác, NUL → skip) — an toàn zip-slip vì mọi path đều nằm trong out_dir; test hồi quy tái tạo zip kiểu Roblox + đã verify trực tiếp với file `content-avatar.zip` thật trong cache (73 file).
 - `API_Docs.txt` ở root là tài liệu WEAO gốc bản update 2026-11 — đối chiếu trước khi thêm field mới của WEAO.
+- 2026-11-06 (3): thêm executor **Umi** ngoài WEAO (command `get_umi_executor`, mục 6.5) + badge DETECTED trong preview (trước đó docs ghi nhưng code thiếu). Vá hiệu ứng progress: `.progress-fill` transition 120ms trong khi backend emit `download://progress` chu kỳ 0.4s → bar chạy nửa chừng đứng im (giật); sửa thành `400ms linear` khớp nhịp emit → chuyển động liên tục; keyframe `sheen` thiếu `from` nên dải sáng nhảy pop giữa bar mỗi vòng loop — thêm `from: translateX(-100%)`. `ExecutorInfo.keySystem` đổi từ `bool` sang `Option<bool>` (null = không biết, không hiển thị chip).

@@ -46,11 +46,12 @@ fn extract_zip(zip_path: &Path, out_dir: &Path) -> Result<(), String> {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("Không tạo được {}: {e}", parent.display()))?;
         }
-        let out = File::create(&dest)
-            .map_err(|e| format!("Không ghi được {}: {e}", dest.display()))?;
+        let out =
+            File::create(&dest).map_err(|e| format!("Không ghi được {}: {e}", dest.display()))?;
         let mut out = BufWriter::new(out);
         std::io::copy(&mut entry, &mut out).map_err(|e| format!("Giải nén lỗi: {e}"))?;
-        out.flush().map_err(|e| format!("Không ghi được {}: {e}", dest.display()))?;
+        out.flush()
+            .map_err(|e| format!("Không ghi được {}: {e}", dest.display()))?;
     }
     Ok(())
 }
@@ -192,15 +193,30 @@ mod tests {
     #[test]
     fn sanitizes_entry_names_like_python_extractall() {
         assert_eq!(sanitize_entry_name("\\"), None);
-        assert_eq!(sanitize_entry_name("abilities\\"), Some(PathBuf::from("abilities")));
+        assert_eq!(
+            sanitize_entry_name("abilities\\"),
+            Some(PathBuf::from("abilities"))
+        );
         assert_eq!(
             sanitize_entry_name("abilities\\AbilityManagerActor.rbxm"),
             Some(PathBuf::from("abilities/AbilityManagerActor.rbxm"))
         );
-        assert_eq!(sanitize_entry_name("/abs/file.txt"), Some(PathBuf::from("abs/file.txt")));
-        assert_eq!(sanitize_entry_name("../evil.txt"), Some(PathBuf::from("evil.txt")));
-        assert_eq!(sanitize_entry_name("a/../../b.txt"), Some(PathBuf::from("a/b.txt")));
-        assert_eq!(sanitize_entry_name("C:\\x\\y.txt"), Some(PathBuf::from("x/y.txt")));
+        assert_eq!(
+            sanitize_entry_name("/abs/file.txt"),
+            Some(PathBuf::from("abs/file.txt"))
+        );
+        assert_eq!(
+            sanitize_entry_name("../evil.txt"),
+            Some(PathBuf::from("evil.txt"))
+        );
+        assert_eq!(
+            sanitize_entry_name("a/../../b.txt"),
+            Some(PathBuf::from("a/b.txt"))
+        );
+        assert_eq!(
+            sanitize_entry_name("C:\\x\\y.txt"),
+            Some(PathBuf::from("x/y.txt"))
+        );
         assert_eq!(sanitize_entry_name("bad\0name"), None);
     }
 
@@ -220,14 +236,18 @@ mod tests {
         zip.write_all(b"").unwrap();
         zip.start_file("abilities\\", opts).unwrap();
         zip.write_all(b"").unwrap();
-        zip.start_file("abilities\\AbilityManagerActor.rbxm", opts).unwrap();
+        zip.start_file("abilities\\AbilityManagerActor.rbxm", opts)
+            .unwrap();
         zip.write_all(b"hello").unwrap();
         zip.start_file("character.rbxm", opts).unwrap();
         zip.write_all(b"data").unwrap();
         zip.finish().unwrap();
         extract_pkg(&zip_path, &dst, "content-avatar.zip", false).unwrap();
         let avatar = dst.join("content").join("avatar");
-        assert!(avatar.join("abilities").join("AbilityManagerActor.rbxm").is_file());
+        assert!(avatar
+            .join("abilities")
+            .join("AbilityManagerActor.rbxm")
+            .is_file());
         assert_eq!(
             std::fs::read(avatar.join("abilities").join("AbilityManagerActor.rbxm")).unwrap(),
             b"hello"

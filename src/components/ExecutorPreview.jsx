@@ -18,6 +18,7 @@ export default function ExecutorPreview({ ex }) {
             ) : (
               <span className="badge warn">CHƯA UPDATE</span>
             )}
+            {ex.detected ? <span className="badge err">DETECTED</span> : null}
           </span>
         </div>
         <div className="ex-rbx">
@@ -35,7 +36,7 @@ export default function ExecutorPreview({ ex }) {
               {ex.cost}
             </span>
           ) : null}
-          {ex.keySystem ? (
+          {ex.keySystem == null ? null : ex.keySystem ? (
             <span className="chip">
               <KeyRound className="ic" />
               Key system

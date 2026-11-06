@@ -5,6 +5,10 @@ pub const WEAO_FUTURE_API: &str = "https://weao.xyz/api/versions/future";
 pub const WEAO_PAST_API: &str = "https://weao.xyz/api/versions/past";
 pub const WEAO_EXPLOITS_API: &str = "https://weao.xyz/api/status/exploits";
 pub const WEAO_USER_AGENT: &str = "WEAO-3PService";
+pub const UMI_EXECUTOR_VERSION_API: &str =
+    "https://raw.githubusercontent.com/NguoiGiaAnThitTreCon/umi/refs/heads/main/umi.txt";
+pub const UMI_RBX_VERSION_API: &str =
+    "https://raw.githubusercontent.com/NguoiGiaAnThitTreCon/umi/refs/heads/main/version.txt";
 pub const VERSION_API_PLAYER: &str =
     "https://clientsettingscdn.roblox.com/v2/client-version/WindowsPlayer";
 pub const VERSION_API_STUDIO: &str =
@@ -37,6 +41,20 @@ async fn fetch_official(client: &reqwest::Client, url: &str) -> Option<String> {
         }
     }
     None
+}
+
+async fn fetch_raw_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("không kết nối được: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.text()
+        .await
+        .map_err(|e| format!("không đọc được nội dung: {e}"))
 }
 
 pub async fn fetch_latest(client: &reqwest::Client) -> Option<String> {
@@ -135,7 +153,7 @@ pub struct ExecutorInfo {
     pub detected: bool,
     pub free: bool,
     pub cost: Option<String>,
-    pub key_system: bool,
+    pub key_system: Option<bool>,
 }
 
 fn cost_to_string(v: Option<serde_json::Value>) -> Option<String> {
@@ -166,7 +184,7 @@ fn filter_exploits(raw: Vec<WeaoExploitRaw>) -> Vec<ExecutorInfo> {
             detected: e.detected,
             free: e.free,
             cost: cost_to_string(e.cost),
-            key_system: e.key_system,
+            key_system: Some(e.key_system),
         });
     }
     out
@@ -189,6 +207,43 @@ pub async fn fetch_executors(client: &reqwest::Client) -> Result<Vec<ExecutorInf
         .await
         .map_err(|e| format!("Dữ liệu WEAO exploits không hợp lệ: {e}"))?;
     Ok(filter_exploits(raw))
+}
+
+pub fn umi_executor_from_texts(
+    executor_version: &str,
+    rbx_text: &str,
+    latest: Option<&str>,
+) -> Result<ExecutorInfo, String> {
+    let version = executor_version.trim();
+    if version.is_empty() {
+        return Err("File umi.txt rỗng — không đọc được version của Umi".to_string());
+    }
+    let rbx_version = validate_hash(rbx_text.trim())
+        .ok_or_else(|| format!("Umi ghi version Roblox không hợp lệ: {}", rbx_text.trim()))?;
+    Ok(ExecutorInfo {
+        name: "Umi".to_string(),
+        executor_version: version.to_string(),
+        update_status: match latest {
+            Some(latest) => latest == rbx_version,
+            None => true,
+        },
+        rbx_version,
+        detected: false,
+        free: false,
+        cost: None,
+        key_system: None,
+    })
+}
+
+pub async fn fetch_umi_executor(client: &reqwest::Client) -> Result<ExecutorInfo, String> {
+    let ver_text = fetch_raw_text(client, UMI_EXECUTOR_VERSION_API)
+        .await
+        .map_err(|e| format!("Không lấy được umi.txt: {e}"))?;
+    let rbx_text = fetch_raw_text(client, UMI_RBX_VERSION_API)
+        .await
+        .map_err(|e| format!("Không lấy được version.txt của Umi: {e}"))?;
+    let latest = fetch_official(client, VERSION_API_PLAYER).await;
+    umi_executor_from_texts(&ver_text, &rbx_text, latest.as_deref())
 }
 
 #[cfg(test)]
@@ -265,7 +320,7 @@ mod tests {
         let list = filter_exploits(raw);
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].cost.as_deref(), Some("15"));
-        assert!(list[0].key_system);
+        assert_eq!(list[0].key_system, Some(true));
         assert!(!list[0].update_status);
         assert!(list[0].detected);
     }
@@ -285,5 +340,43 @@ mod tests {
         assert_eq!(list[0].name, "Xeno");
         assert_eq!(list[0].executor_version, "2.7.5");
         assert_eq!(list[0].rbx_version, "version-eb4648e9148d440c");
+        assert_eq!(list[0].key_system, Some(false));
+    }
+
+    #[test]
+    fn umi_from_texts_parses_and_compares_latest() {
+        let ex = umi_executor_from_texts(
+            "0.57\n",
+            "version-f0ea5da9412f4e35\n",
+            Some("version-f0ea5da9412f4e35"),
+        )
+        .expect("umi ok");
+        assert_eq!(ex.name, "Umi");
+        assert_eq!(ex.executor_version, "0.57");
+        assert_eq!(ex.rbx_version, "version-f0ea5da9412f4e35");
+        assert!(ex.update_status);
+        assert_eq!(ex.key_system, None);
+        assert!(!ex.free);
+        assert_eq!(ex.cost, None);
+
+        let stale = umi_executor_from_texts(
+            "0.57",
+            "version-f0ea5da9412f4e35",
+            Some("version-eb4648e9148d440c"),
+        )
+        .expect("umi ok");
+        assert!(!stale.update_status);
+
+        let unknown =
+            umi_executor_from_texts("0.57", "version-f0ea5da9412f4e35", None).expect("umi ok");
+        assert!(unknown.update_status);
+    }
+
+    #[test]
+    fn umi_from_texts_rejects_bad_payloads() {
+        assert!(umi_executor_from_texts("", "version-f0ea5da9412f4e35", None).is_err());
+        assert!(umi_executor_from_texts("   \n ", "version-f0ea5da9412f4e35", None).is_err());
+        assert!(umi_executor_from_texts("0.57", "1.2.3.4567", None).is_err());
+        assert!(umi_executor_from_texts("0.57", "version-abc123", None).is_err());
     }
 }

@@ -206,14 +206,12 @@ where
     }
 
     let pkg_size = resp.content_length().map_or(0, |len| len + resume_pos);
-    let mut file = open_part(&part, resume_pos)
-        .await
-        .map_err(|e| {
-            format!(
-                "Không ghi được vào {} — đĩa đầy hoặc không đủ quyền:\n{e}",
-                part.display()
-            )
-        })?;
+    let mut file = open_part(&part, resume_pos).await.map_err(|e| {
+        format!(
+            "Không ghi được vào {} — đĩa đầy hoặc không đủ quyền:\n{e}",
+            part.display()
+        )
+    })?;
 
     let mut pkg_done = resume_pos;
     let mut last_t = Instant::now();

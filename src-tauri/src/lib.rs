@@ -65,6 +65,12 @@ async fn list_executors() -> Result<Vec<versions::ExecutorInfo>, String> {
 }
 
 #[tauri::command]
+async fn get_umi_executor() -> Result<versions::ExecutorInfo, String> {
+    let client = http_client();
+    versions::fetch_umi_executor(&client).await
+}
+
+#[tauri::command]
 fn list_installed_versions(with_sizes: Option<bool>) -> Result<Vec<InstalledVersion>, String> {
     installed::scan(with_sizes.unwrap_or(false))
 }
@@ -344,11 +350,11 @@ async fn install_inner(
     let total_bytes: u64 = zips.iter().map(|p| p.compressed).sum();
     emit_log(
         app,
-            &format!(
-                "Tìm thấy {} gói ({})",
-                zips.len(),
-                cdn::fmt_bytes(total_bytes)
-            ),
+        &format!(
+            "Tìm thấy {} gói ({})",
+            zips.len(),
+            cdn::fmt_bytes(total_bytes)
+        ),
         "muted",
     );
 
@@ -526,6 +532,7 @@ pub fn run() {
             get_live_versions,
             get_history_versions,
             list_executors,
+            get_umi_executor,
             list_installed_versions,
             get_download_history,
             import_legacy_history,

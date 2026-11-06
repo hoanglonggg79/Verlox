@@ -177,7 +177,7 @@ export default function RobloxScreen({
               aria-labelledby="select-executor-label"
             >
               {executorsLoading && executors.length === 0 ? (
-                <span className="pills-hint muted">Đang nạp danh sách executor từ WEAO...</span>
+                <span className="pills-hint muted">Đang nạp danh sách executor (WEAO + Umi)...</span>
               ) : null}
               {!executorsLoading && executorsLoaded && executors.length === 0 ? (
                 <span className="pills-hint muted">Không nạp được executor — bấm nút làm mới.</span>
@@ -198,7 +198,7 @@ export default function RobloxScreen({
             </div>
             <button
               className="btn small icon"
-              title="Nạp lại danh sách executor từ WEAO"
+              title="Nạp lại danh sách executor (WEAO + Umi)"
               onClick={onLoadExecutors}
               disabled={executorsLoading}
             >

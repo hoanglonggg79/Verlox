@@ -102,13 +102,27 @@ export default function App() {
     if (!hasTauri || executorsLoading) return;
     setExecutorsLoading(true);
     try {
-      const list = await invoke("list_executors");
+      const [weaoRes, umiRes] = await Promise.allSettled([
+        invoke("list_executors"),
+        invoke("get_umi_executor"),
+      ]);
+      if (weaoRes.status === "rejected") pushLog(String(weaoRes.reason), "error");
+      if (umiRes.status === "rejected") pushLog(String(umiRes.reason), "error");
+      const list = weaoRes.status === "fulfilled" ? [...weaoRes.value] : [];
+      if (
+        umiRes.status === "fulfilled" &&
+        !list.some((e) => e.name.toLowerCase() === umiRes.value.name.toLowerCase())
+      ) {
+        list.push(umiRes.value);
+      }
       setExecutors(list);
       setExecutorsLoaded(true);
-      pushLog(`Nạp ${list.length} executor Windows từ WEAO`, "ok");
-    } catch (err) {
-      setExecutorsLoaded(true);
-      pushLog(String(err), "error");
+      if (list.length > 0) {
+        const sources = [];
+        if (weaoRes.status === "fulfilled") sources.push("WEAO");
+        if (umiRes.status === "fulfilled") sources.push("Umi");
+        pushLog(`Nạp ${list.length} executor Windows (${sources.join(" + ")})`, "ok");
+      }
     } finally {
       setExecutorsLoading(false);
     }
