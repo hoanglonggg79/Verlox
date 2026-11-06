@@ -1,6 +1,6 @@
 # VERLOX — Roblox Version Launcher
 
-> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 2** (scaffold + port logic thuần + engine download + UI progress), cập nhật 2026-11-05, vá 3 lỗi logic ngày 2026-11-06.
+> Tài liệu dự án, viết cho người mới tiếp nhận (onboarding). Trạng thái tài liệu: **sau bước 3** (scaffold + port logic thuần + engine download + UI progress + Windows protocol), cập nhật 2026-11-06.
 
 ---
 
@@ -25,7 +25,7 @@ Tiền thân: **Roblox Version Downloader 1.2** (Python + PySide6) — toàn b�
 | HTML/CSS/JS thuần (không framework, không bundler) | Frontend trong `src/`, dùng `window.__TAURI__` (withGlobalTauri) |
 | Node.js + npm | Cần cho `@tauri-apps/cli` (chạy `tauri dev` / `tauri build`) |
 
-Môi trường đã verify trên máy này (2026-11-05): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 23/23 pass (sau bước 2 + vá lỗi logic 2026-11-06), 455 crates đã lock trong `src-tauri/Cargo.lock`.
+Môi trường đã verify trên máy này (2026-11-05): Node v24.19.0, npm 11.17.0, rustc 1.98.0, cargo 1.98.0. `cargo check` pass 0 warning, `cargo test` 27/27 pass (sau bước 2 + bước 3 + vá lỗi logic 2026-11-06), 455 crates đã lock trong `src-tauri/Cargo.lock`.
 
 Yêu cầu thêm cho máy khác: **VS Build Tools (MSVC linker)** khi build release, **WebView2 Runtime** (Windows 10/11 có sẵn).
 
@@ -67,7 +67,7 @@ RobloxVersionDownloader/   (đề xuất: đổi tên repo thành verlox/)
 │       ├── history.rs    # download_history.json đọc/ghi + push — đã port + test
 │       ├── cdn.rs       # probe CDN + download resume + MD5 + progress — đã port + test (bước 2)
 │       ├── extract.rs   # giải nén zip theo PACKAGE_MAP + WebView2 installer + AppSettings.xml — đã port + test (bước 2)
-│       └── (bước 3) win.rs      # đăng ký protocol roblox-player:// qua windows-registry
+│       └── win.rs        # register/unregister protocol roblox-player:// (HKCU, marker "verlox") — đã port + test (bước 3)
 └── backup/                # DỰ ÁN PYTHON CŨ — chỉ tham khảo, KHÔNG build/edit
     ├── RobloxVersionDownloader1.2.py   # nguồn port chính (~1660 dòng, có sẵn mọi logic cần)
     ├── README.md                      # mô tả bản 1.2
@@ -93,9 +93,10 @@ Bảng commands hiện có (`src-tauri/src/lib.rs`):
 | `get_download_history` | ✅ chạy được | Đọc `%LOCALAPPDATA%\Verlox\download_history.json` |
 | `import_legacy_history(filePath)` | ✅ chạy được | Merge JSON cũ (backup/download_history.json) vào history mới |
 | `create_shortcut(hash)` | ✅ chạy được | Tạo `.lnk` trên Desktop qua PowerShell COM |
+| `register_protocol(hash)` | ✅ chạy được (bước 3) | Ghi registry `HKCU\Software\Classes\roblox{,-player}` cho version theo hash: default `URL:<proto> Protocol`, `URL Protocol=""`, `shell\open\command = "<exe>" "%1"`, kèm giá trị marker `verlox=<đường dẫn exe>` |
+| `unregister_protocol()` | ✅ chạy được (bước 3) | Gỡ đăng ký protocol — chỉ xóa key nào có marker `verlox` (không đụng đăng ký gốc của Roblox chính thức); chưa đăng ký → trả lỗi tiếng Việt |
 | `start_download(hash, installDir, options)` | ✅ chạy được | Spawn task download: probe CDN → manifest → tải từng zip (cache MD5, resume `.part`, verify MD5) → giải nén theo PACKAGE_MAP → ghi AppSettings.xml → shortcut tùy chọn → `history::push`. `installDir` là thư mục gốc, version cài vào con `{hash}`. Trả lỗi `EXISTS::<dir>` khi thư mục đích đã có nội dung và `options.overwrite` chưa bật (UI hỏi người dùng rồi gọi lại với `overwrite: true`) |
 | `cancel_download` | ✅ chạy được | Set cờ cancel — task dừng ở điểm kiểm tra kế tiếp, các file `.part` được giữ để resume lần sau |
-| `register_protocol` | ⛔ stub — "bước 3" | Ghi registry `HKCU\Software\Classes\roblox{,-player}` |
 
 Event dùng thật ở bước 2 (frontend `window.__TAURI__.event.listen`): `download://log` `{message, level}` (level: `info/muted/warning/success/error`), `download://progress` `{overallPct, pkgName, pkgPct, speedBps, etaSecs}`, `download://done` `{installDir}` (`null` nếu bị hủy giữa chừng), `download://error` `{title, message}`.
 
@@ -210,15 +211,17 @@ Port `InstallWorker` (backup/RobloxVersionDownloader1.2.py dòng ~296-612) thàn
 2. ~~`fetch_manifest(cdn, hash)`~~ ✅ → `manifest::parse_manifest` (đã có).
 3. Vòng lặp từng zip ✅: check cache (`<hash>-<zip>` MD5 bằng crate `md-5`) → nếu miss thì stream bằng `reqwest` `bytes_stream` vào `<zip>.part`, **resume bằng header `Range: bytes=N-`** (lỗi 416 → xóa .part tải lại từ đầu; server trả 200 thay vì 206 → cũng reset về đầu), emit `download://progress` mỗi ~0.4s; verify MD5 xong mới rename `.part` → đích.
 4. `extract.rs` ✅: crate `zip` giải nén theo `PACKAGE_MAP` (zip lạ → giải nén vào gốc, như bản Python), `WebView2RuntimeInstaller.zip` → chạy exe `/silent /install` timeout 120s (tắt option thì bỏ qua), ghi `AppSettings.xml`.
-5. `start_download` ✅: thay stub bằng `tauri::async_runtime::spawn` + `install_task`/`install_inner` trong `lib.rs`; state `DownloadState { cancel: Arc<AtomicBool>, running: Arc<AtomicBool> }` qua `.manage()`, cờ `running` do `RunningGuard` (Drop) tự reset khi task xong hoặc panic; xong gọi `history::push`; ghi đè thư mục tồn tại: backend trả `EXISTS::<dir>`, UI confirm rồi gọi lại với `options.overwrite = true` (option `registerProtocol` tạm chỉ log cảnh báo — chờ bước 3).
+5. `start_download` ✅: thay stub bằng `tauri::async_runtime::spawn` + `install_task`/`install_inner` trong `lib.rs`; state `DownloadState { cancel: Arc<AtomicBool>, running: Arc<AtomicBool> }` qua `.manage()`, cờ `running` do `RunningGuard` (Drop) tự reset khi task xong hoặc panic; xong gọi `history::push`; ghi đè thư mục tồn tại: backend trả `EXISTS::<dir>`, UI confirm rồi gọi lại với `options.overwrite = true` (option `registerProtocol` giờ gọi `win.rs::register_protocol` — bước 3 đã hoàn tất).
 6. Frontend ✅: `listen("download://progress")` vẽ 2 progress bar (overall + per-pkg) + speed/ETA + nút Hủy tải, card "Tiến trình tải" trong `index.html`.
 
 Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + zero-copy; song song nhiều zip chỉ làm khi đã ổn.
 
-### Bước 3 — Windows integration
+### Bước 3 — Windows integration — HOÀN TẤT (2026-11-06)
 
-- `win.rs::register_protocol` bằng crate `windows-registry` (đã có trong Cargo.toml): tạo `HKCU\Software\Classes\roblox` + `roblox-player`, giá trị `URL:<proto> Protocol`, `URL Protocol=""`, `shell\open\command = "<đường dẫn exe>" "%1"`.
-- Nút gỡ protocol, checkbox option trong UI (module `register_protocol` command thay stub).
+- `win.rs` ✅: `register_protocol(exe)` port từ `_register_protocol` (Python dòng 588): crate `windows-registry`, tạo `HKCU\Software\Classes\roblox` + `roblox-player`, default `URL:<proto> Protocol`, `URL Protocol=""`, `shell\open\command = "<exe>" "%1"`. Thêm so với bản Python: giá trị marker `verlox=<exe>` để biết Verlox là người đăng ký.
+- `unregister_protocol()` ✅: xóa 2 key trên **chỉ khi có marker `verlox`** — tránh phá đăng ký gốc của Roblox chính thức khi người dùng bấm gỡ mà Verlox chưa từng đăng ký; không có gì để gỡ → trả lỗi tiếng Việt lên log.
+- Command `register_protocol(hash)` (lib.rs) ✅ thay stub: đăng ký cho version đã cài theo hash, tương tự `create_shortcut`. Option `registerProtocol` trong `start_download` giờ gọi thẳng `win.rs` sau khi giải nén xong (không còn cảnh báo "chưa port").
+- UI ✅: checkbox "Đăng ký protocol roblox-player://" trong card tải (đọc vào options mỗi lần `start_download`), nút "Gỡ protocol" ở card "Đang có trên máy", nút "Protocol" trên từng row version có Player.
 - Tạo shortcut đã xong từ bước 1.
 
 ### Bước 4 — UI hoàn thiện + query policy
@@ -247,7 +250,7 @@ Model tải tuần tự từng zip vẫn NHANH hơn bản Python vì stream + ze
 | `is_unsafe_dir` (dòng 141-155) | `installed.rs::is_unsafe_dir` |
 | `InstallWorker._main/_pick_cdn/_download_pkg/_extract` (dòng 296-586) | `cdn.rs` (probe/fetch/download_pkg) + `extract.rs` + `install_task`/`install_inner` (`lib.rs`) — đã port bước 2; `create_shortcut` option dùng lại `make_shortcut` của lệnh `create_shortcut` |
 | `create_desktop_shortcut` (dòng 184) | `create_shortcut` command (PowerShell COM) |
-| `_register_protocol` (dòng 588) | **bước 3**: `win.rs::register_protocol` |
+| `_register_protocol` (dòng 588) | `win.rs::register_protocol` — đã port (bước 3) |
 | `HistoryRow` + UI PySide6 | `src/index.html` + `styles.css` + `main.js` |
 | `PALETTE` (dòng 88) | `:root` CSS variables trong `styles.css` |
 | `MusicPlayer` (pygame, dòng 216) | **ĐÃ BỎ** — không port (nếu muốn: `<audio>` trong webview, bước 4) |

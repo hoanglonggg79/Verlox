@@ -146,7 +146,7 @@ function setDownloadBusy(busy) {
 
 async function downloadHash(hash, overwrite = false) {
   const options = {
-    registerProtocol: false,
+    registerProtocol: $("#opt-register-protocol").checked,
     installWebview2: false,
     createShortcut: false,
     overwrite,
@@ -276,11 +276,15 @@ function installedRow(v) {
   actions.className = "actions";
 
   const play = btn("Chạy", () => runVersion(v.hash));
+  const proto = btn("Protocol", () => registerProtocolFlow(v.hash));
   const open = btn("Thư mục", () => openFolder(v.path));
   const del = btn("Xóa", () => deleteVersionFlow(del, v.hash));
-  if (!v.hasPlayer) play.disabled = true;
+  if (!v.hasPlayer) {
+    play.disabled = true;
+    proto.disabled = true;
+  }
 
-  actions.append(play, open, del);
+  actions.append(play, proto, open, del);
   row.append(hash, badges, size, actions);
   return row;
 }
@@ -308,6 +312,24 @@ async function runVersion(h) {
   try {
     await invoke("launch_version", { hash: h });
     log(`Đã khởi chạy ${h}`, "ok");
+  } catch (err) {
+    log(String(err), "error");
+  }
+}
+
+async function registerProtocolFlow(h) {
+  try {
+    await invoke("register_protocol", { hash: h });
+    log(`Đã đăng ký protocol roblox-player:// cho ${h}`, "ok");
+  } catch (err) {
+    log(String(err), "error");
+  }
+}
+
+async function unregisterProtocolFlow() {
+  try {
+    await invoke("unregister_protocol");
+    log("Đã gỡ đăng ký protocol roblox-player://", "ok");
   } catch (err) {
     log(String(err), "error");
   }
@@ -414,6 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
     else log("Chưa có hash mới nhất — bấm Làm mới", "error");
   });
   $("#btn-refresh-installed").addEventListener("click", () => refreshInstalled(true));
+  $("#btn-unregister-protocol").addEventListener("click", unregisterProtocolFlow);
   $("#btn-clear-cache").addEventListener("click", clearCacheFlow);
   $("#btn-load-history").addEventListener("click", loadDeployHistory);
   $("#history-select").addEventListener("change", (e) => {

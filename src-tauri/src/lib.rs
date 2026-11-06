@@ -5,6 +5,7 @@ mod history;
 mod installed;
 mod manifest;
 mod versions;
+mod win;
 
 use installed::{
     clear_dir_contents, downloads_root, is_unsafe_dir, versions_root, InstalledVersion,
@@ -15,9 +16,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
-
-const ERR_PROTOCOL_STEP3: &str =
-    "Dang ky protocol roblox-player:// thuoc buoc 3 cua lo trinh - xem docs.md muc 7";
 
 fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -454,11 +452,23 @@ async fn install_inner(
     emit_log(app, "Da ghi AppSettings.xml.", "muted");
 
     if opts.register_protocol {
-        emit_log(
-            app,
-            "Tuy chon dang ky protocol chua duoc port — se co o buoc 3 (xem docs.md muc 7).",
-            "warning",
-        );
+        let exe = install_dir.join("RobloxPlayerBeta.exe");
+        if exe.is_file() {
+            match win::register_protocol(&exe) {
+                Ok(()) => emit_log(
+                    app,
+                    "Da dang ky protocol roblox-player:// cho phien ban nay.",
+                    "success",
+                ),
+                Err(e) => emit_log(app, &format!("Khong dang ky duoc protocol: {e}"), "warning"),
+            }
+        } else {
+            emit_log(
+                app,
+                "Khong tim thay RobloxPlayerBeta.exe — bo qua dang ky protocol.",
+                "warning",
+            );
+        }
     }
 
     if opts.create_shortcut {
@@ -478,8 +488,18 @@ async fn install_inner(
 }
 
 #[tauri::command]
-fn register_protocol() -> Result<(), String> {
-    Err(ERR_PROTOCOL_STEP3.to_string())
+fn register_protocol(hash: String) -> Result<(), String> {
+    let vh = hash::validate_hash(&hash).ok_or_else(|| "Hash khong hop le".to_string())?;
+    let exe = versions_root().join(&vh).join("RobloxPlayerBeta.exe");
+    if !exe.is_file() {
+        return Err(format!("Khong tim thay {}", exe.display()));
+    }
+    win::register_protocol(&exe)
+}
+
+#[tauri::command]
+fn unregister_protocol() -> Result<(), String> {
+    win::unregister_protocol()
 }
 
 #[tauri::command]
@@ -508,6 +528,7 @@ pub fn run() {
             start_download,
             cancel_download,
             register_protocol,
+            unregister_protocol,
             create_shortcut
         ])
         .run(tauri::generate_context!())
