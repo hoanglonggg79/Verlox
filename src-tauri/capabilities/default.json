@@ -1,0 +1,1 @@
+{"identifier": "default", "description": "Verlox main window capability", "windows": ["main"], "permissions": ["core:default"]}
