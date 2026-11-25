@@ -82,7 +82,7 @@ export default function HomeScreen({ onLog }) {
           </div>
           <h2>Thông tin bản dựng</h2>
           <div className="home-meta">
-            <span>Verlox v2.0.0</span>
+            <span>Verlox v1.2.0</span>
             <span>Rust + Tauri 2 · React 19 + Vite</span>
             <span>License MIT</span>
           </div>

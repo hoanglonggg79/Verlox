@@ -29,8 +29,13 @@ npm run dev        # Tauri dev app (starts the Vite server automatically)
 ## Build
 
 ```powershell
-npm run build      # builds the frontend and produces the NSIS installer
+npm run build:portable   # standalone click-and-run exe (no installer)
+npm run build            # optional NSIS installer
 ```
+
+The portable build outputs `src-tauri/target/release/verlox.exe`. It embeds the
+frontend and needs no installation — just double-click it. The target PC still
+needs the WebView2 Runtime (preinstalled on modern Windows 10/11).
 
 Useful commands:
 
@@ -43,9 +48,9 @@ cargo check        # from src-tauri/ — fast compile check
 
 ## CI
 
-`.github/workflows/build.yml` builds the Windows NSIS installer on every push to `main`, on pull requests, and on manual runs (Actions → **Build Windows installer** → Run workflow). The finished installer is attached to the workflow run as the `Verlox-Windows-x64` artifact. Rust dependencies are cached between runs, so later builds are much faster.
+`.github/workflows/build.yml` builds the portable Windows exe on every push to `main`, on pull requests, and on manual runs (Actions → **Build Windows portable exe** → Run workflow). The finished file is attached to the workflow run as `Verlox-Windows-x64-portable` (`Verlox-<version>-portable.exe`). Rust dependencies are cached between runs, so later builds are much faster.
 
-Pushing a version tag such as `v2.0.0` also creates a draft GitHub release containing the installer.
+Pushing a version tag such as `v1.2.0` also creates a draft GitHub release containing the portable exe.
 
 ## License
 

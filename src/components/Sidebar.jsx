@@ -13,7 +13,7 @@ export default function Sidebar({ active, onSelect }) {
         <span className="brand">
           VERLOX<span className="brand-cursor">_</span>
         </span>
-        <span className="sidebar-version">v2.0.0</span>
+        <span className="sidebar-version">v1.2.0</span>
       </div>
       <nav className="sidebar-nav">
         {TABS.map(({ id, label, Icon }) => (

@@ -1,8 +1,12 @@
 import { Bot, CircleSlash, Coins, KeyRound, TriangleAlert } from "lucide-react";
 import { executorIcon } from "../lib/executorIcons.js";
+import { fmtVersion } from "../lib/utils.js";
 
 export default function ExecutorPreview({ ex }) {
   const icon = executorIcon(ex.name);
+  // Paid executors don't rely on a key system, so their key/no-key chip is
+  // just noise (and often wrong). Only show it for free executors.
+  const showKeyChip = ex.free && ex.keySystem != null;
   return (
     <div className="ex-preview">
       <div className="ex-icon-wrap">
@@ -11,7 +15,9 @@ export default function ExecutorPreview({ ex }) {
       <div className="ex-info">
         <div className="ex-title-row">
           <span className="ex-name">{ex.name}</span>
-          {ex.executorVersion ? <span className="ex-ver muted">v{ex.executorVersion}</span> : null}
+          {ex.executorVersion ? (
+            <span className="ex-ver muted">{fmtVersion(ex.executorVersion)}</span>
+          ) : null}
           <span className="badges">
             {ex.updateStatus ? (
               <span className="badge ok">ĐÃ CẬP NHẬT</span>
@@ -35,7 +41,7 @@ export default function ExecutorPreview({ ex }) {
               {ex.cost}
             </span>
           ) : null}
-          {ex.keySystem == null ? null : ex.keySystem ? (
+          {!showKeyChip ? null : ex.keySystem ? (
             <span className="chip">
               <KeyRound className="ic" />
               Key system

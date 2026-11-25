@@ -1,3 +1,12 @@
+// Executor APIs are inconsistent: some send "2.7.5", some "v2.7.5", "V5.482"
+// or even "v-123". Strip any leading v/V so we always render exactly one "v".
+export function fmtVersion(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  const body = s.replace(/^[vV]+/, "").trim();
+  return body ? `v${body}` : "v";
+}
+
 export function fmtBytes(n) {
   if (!n) return "0 B";
   if (n < 1024) return `${n} B`;
