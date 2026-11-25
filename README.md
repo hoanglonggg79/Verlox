@@ -41,6 +41,12 @@ cargo test         # from src-tauri/ — backend unit tests
 cargo check        # from src-tauri/ — fast compile check
 ```
 
+## CI
+
+`.github/workflows/build.yml` builds the Windows NSIS installer on every push to `main`, on pull requests, and on manual runs (Actions → **Build Windows installer** → Run workflow). The finished installer is attached to the workflow run as the `Verlox-Windows-x64` artifact. Rust dependencies are cached between runs, so later builds are much faster.
+
+Pushing a version tag such as `v2.0.0` also creates a draft GitHub release containing the installer.
+
 ## License
 
 MIT — see [License](License).
