@@ -18,7 +18,6 @@ export default function ExecutorPreview({ ex }) {
             ) : (
               <span className="badge warn">CHƯA UPDATE</span>
             )}
-            {ex.detected ? <span className="badge err">DETECTED</span> : null}
           </span>
         </div>
         <div className="ex-rbx">

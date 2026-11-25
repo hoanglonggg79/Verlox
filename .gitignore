@@ -3,3 +3,6 @@ src-tauri/target/
 src-tauri/gen/schemas/
 dist/
 *.part
+API_Docs.txt
+docs.md
+New_UI.md

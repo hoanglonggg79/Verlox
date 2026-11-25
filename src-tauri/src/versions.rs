@@ -100,8 +100,6 @@ struct WeaoExploitRaw {
     #[serde(rename = "updateStatus", default)]
     update_status: bool,
     #[serde(default)]
-    detected: bool,
-    #[serde(default)]
     platform: String,
     #[serde(default)]
     free: bool,
@@ -119,7 +117,6 @@ pub struct ExecutorInfo {
     pub executor_version: String,
     pub rbx_version: String,
     pub update_status: bool,
-    pub detected: bool,
     pub free: bool,
     pub cost: Option<String>,
     pub key_system: Option<bool>,
@@ -150,7 +147,6 @@ fn filter_exploits(raw: Vec<WeaoExploitRaw>) -> Vec<ExecutorInfo> {
             executor_version: e.version,
             rbx_version,
             update_status: e.update_status,
-            detected: e.detected,
             free: e.free,
             cost: cost_to_string(e.cost),
             key_system: Some(e.key_system),
@@ -197,7 +193,6 @@ pub fn umi_executor_from_texts(
             None => true,
         },
         rbx_version,
-        detected: false,
         free: true,
         cost: None,
         key_system: Some(false),
@@ -227,7 +222,6 @@ mod tests {
                 version: "1.1".into(),
                 rbx_version: Some("version-eb4648e9148d440c".into()),
                 update_status: true,
-                detected: false,
                 platform: "Windows".into(),
                 free: true,
                 cost: None,
@@ -279,7 +273,6 @@ mod tests {
             version: "2.0".into(),
             rbx_version: Some("version-b67e7cbe150a4c59".into()),
             update_status: false,
-            detected: true,
             platform: "windows".into(),
             free: false,
             cost: Some(serde_json::json!(15)),
@@ -291,7 +284,6 @@ mod tests {
         assert_eq!(list[0].cost.as_deref(), Some("15"));
         assert_eq!(list[0].key_system, Some(true));
         assert!(!list[0].update_status);
-        assert!(list[0].detected);
     }
 
     #[test]
